@@ -1,0 +1,37 @@
+{
+  "name": "crs-balance",
+  "description": "查看 CRS 上游 Claude 账号 5h / 7d 使用量，并集成 Claude Code statusLine。",
+  "version": "0.2.1",
+  "author": {
+    "name": "base-stability-skills"
+  },
+  "keywords": ["crs", "claude", "balance", "usage", "statusline"],
+  "userConfig": {
+    "base_url": {
+      "type": "string",
+      "title": "CRS Base URL",
+      "description": "CRS admin API base URL，例如 https://250924.xyz。",
+      "required": true,
+      "default": "https://250924.xyz"
+    },
+    "admin_user": {
+      "type": "string",
+      "title": "CRS admin username",
+      "description": "CRS admin 登录用户名。",
+      "required": true
+    },
+    "admin_pass": {
+      "type": "string",
+      "title": "CRS admin password",
+      "description": "CRS admin 登录密码。",
+      "required": true,
+      "sensitive": true
+    },
+    "account_filter": {
+      "type": "string",
+      "title": "CRS account filter",
+      "description": "只展示匹配该 id 或名称片段的 CRS 上游 Claude 账号；也可用环境变量 CRS_ACCOUNT_ID、CRS_ACCOUNT_NAME 或 CRS_ACCOUNT_FILTER 覆盖。",
+      "required": false
+    }
+  }
+}

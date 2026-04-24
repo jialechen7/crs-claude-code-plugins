@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -u
+
+input="$(cat)"
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+env_file="${CRS_ENV_FILE:-$config_dir/crs-balance.env}"
+
+if [[ -f "$env_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$env_file"
+fi
+
+run_hud() {
+  case "$input" in
+    \{*) ;;
+    *) return 0 ;;
+  esac
+
+  local hud_dir
+  hud_dir="$(
+    ls -d "$config_dir"/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null |
+      awk -F/ '{ print $(NF-1) "\t" $(0) }' |
+      sort -t. -k1,1n -k2,2n -k3,3n -k4,4n |
+      tail -1 |
+      cut -f2-
+  )"
+  if [[ -n "${hud_dir:-}" && -f "${hud_dir}dist/index.js" ]] && command -v node >/dev/null 2>&1; then
+    printf '%s' "$input" | node "${hud_dir}dist/index.js" 2>/dev/null || true
+  fi
+}
+
+run_crs() {
+  local crs_bin="${script_dir}/crs-balance"
+  if [[ -x "$crs_bin" ]]; then
+    "$crs_bin" --statusline 2>/dev/null || true
+  elif command -v crs-balance >/dev/null 2>&1; then
+    crs-balance --statusline 2>/dev/null || true
+  fi
+}
+
+hud="$(run_hud)"
+crs="$(run_crs)"
+
+if [[ -n "$hud" && -n "$crs" ]]; then
+  printf '%s\n%s\n' "$hud" "$crs"
+elif [[ -n "$crs" ]]; then
+  printf '%s\n' "$crs"
+else
+  printf '%s\n' "$hud"
+fi

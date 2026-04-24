@@ -1,0 +1,511 @@
+#!/usr/bin/env node
+
+"use strict";
+
+const DEFAULT_BASE_URL = "https://250924.xyz";
+const DEFAULT_INTERVAL_SECONDS = 300;
+const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_CACHE_SECONDS = 300;
+
+function readOption(key, envName, fallback = undefined) {
+  return (
+    process.env[envName] ||
+    process.env[`CLAUDE_PLUGIN_OPTION_${key}`] ||
+    process.env[`CLAUDE_PLUGIN_OPTION_${key.toUpperCase()}`] ||
+    fallback
+  );
+}
+
+function parseArgs(argv) {
+  const opts = {
+    watch: false,
+    json: false,
+    statusline: false,
+    all: false,
+    baseUrl: readOption("base_url", "CRS_BASE_URL", DEFAULT_BASE_URL),
+    username: readOption("admin_user", "CRS_ADMIN_USER"),
+    password: readOption("admin_pass", "CRS_ADMIN_PASS"),
+    interval: Number(readOption("interval", "CRS_INTERVAL", DEFAULT_INTERVAL_SECONDS)),
+    timeoutMs: Number(readOption("timeout_ms", "CRS_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)),
+    cacheSeconds: Number(readOption("cache_seconds", "CRS_CACHE_SECONDS", DEFAULT_CACHE_SECONDS)),
+    accountId: readOption("account_id", "CRS_ACCOUNT_ID"),
+    accountName: readOption("account_name", "CRS_ACCOUNT_NAME"),
+    accountFilter: readOption("account_filter", "CRS_ACCOUNT_FILTER"),
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--watch") {
+      opts.watch = true;
+    } else if (arg === "--json") {
+      opts.json = true;
+    } else if (arg === "--statusline") {
+      opts.statusline = true;
+    } else if (arg === "--all") {
+      opts.all = true;
+    } else if (arg === "--base-url") {
+      opts.baseUrl = argv[++i];
+    } else if (arg === "--user" || arg === "--username") {
+      opts.username = argv[++i];
+    } else if (arg === "--password") {
+      opts.password = argv[++i];
+    } else if (arg === "--account-id") {
+      opts.accountId = argv[++i];
+    } else if (arg === "--account-name") {
+      opts.accountName = argv[++i];
+    } else if (arg === "--account-filter") {
+      opts.accountFilter = argv[++i];
+    } else if (arg === "--cache-seconds") {
+      opts.cacheSeconds = Number(argv[++i]);
+    } else if (arg === "--interval") {
+      opts.interval = Number(argv[++i]);
+    } else if (arg === "--timeout") {
+      opts.timeoutMs = Number(argv[++i]) * 1000;
+    } else if (arg === "--help" || arg === "-h") {
+      printHelp();
+      process.exit(0);
+    } else {
+      throw new Error(`未知参数: ${arg}`);
+    }
+  }
+
+  opts.baseUrl = String(opts.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  if (!opts.username || !opts.password) {
+    if (opts.statusline) {
+      opts.missingCredentials = true;
+    } else {
+      throw new Error("缺少 CRS admin 凭据：请配置插件 userConfig，或设置 CRS_ADMIN_USER 和 CRS_ADMIN_PASS。");
+    }
+  }
+  if (!Number.isFinite(opts.interval) || opts.interval <= 0) {
+    throw new Error("--interval 必须是正数秒。");
+  }
+  if (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs <= 0) {
+    throw new Error("--timeout 必须是正数秒。");
+  }
+  if (!Number.isFinite(opts.cacheSeconds) || opts.cacheSeconds < 0) {
+    throw new Error("--cache-seconds 必须是非负秒数。");
+  }
+  return opts;
+}
+
+function printHelp() {
+  console.log(`Usage: crs-balance [--json] [--watch] [--statusline] [--interval seconds] [--base-url url]
+
+查看 CRS 上游 Claude 账号 5h / 7d / 7d-Opus 使用率和剩余额度。
+
+筛选：
+  --account-id <id>
+  --account-name <name>
+  --account-filter <text>
+  --all
+
+配置来源：
+  插件 userConfig: base_url, admin_user, admin_pass
+  环境变量: CRS_BASE_URL, CRS_ADMIN_USER, CRS_ADMIN_PASS, CRS_INTERVAL
+  账号筛选环境变量: CRS_ACCOUNT_ID, CRS_ACCOUNT_NAME, CRS_ACCOUNT_FILTER
+`);
+}
+
+async function http(opts, method, path, token, body) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+  try {
+    const headers = {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "user-agent": "crs-balance-plugin/0.1.0",
+    };
+    if (token) {
+      headers.authorization = `Bearer ${token}`;
+    }
+
+    const resp = await fetch(`${opts.baseUrl}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const text = await resp.text();
+    const payload = text ? JSON.parse(text) : null;
+    if (!resp.ok) {
+      const detail = payload && typeof payload === "object" ? JSON.stringify(payload) : text;
+      const err = new Error(`${method} ${path} failed: HTTP ${resp.status} ${detail || ""}`.trim());
+      err.status = resp.status;
+      throw err;
+    }
+    return payload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function login(opts) {
+  const payload = await http(opts, "POST", "/web/auth/login", null, {
+    username: opts.username,
+    password: opts.password,
+  });
+  if (!payload || payload.success !== true || !payload.token) {
+    throw new Error(`登录失败: ${JSON.stringify(payload)}`);
+  }
+  return payload.token;
+}
+
+async function fetchSnapshot(opts, token) {
+  const [accountsResp, usageResp] = await Promise.all([
+    http(opts, "GET", "/admin/claude-accounts", token),
+    http(opts, "GET", "/admin/claude-accounts/usage", token),
+  ]);
+
+  const accounts = Array.isArray(accountsResp)
+    ? accountsResp
+    : Array.isArray(accountsResp?.data)
+      ? accountsResp.data
+      : [];
+  const usage = usageResp && typeof usageResp === "object"
+    ? usageResp.data && typeof usageResp.data === "object"
+      ? usageResp.data
+      : usageResp
+    : {};
+
+  return normalizeSnapshot(accounts, usage);
+}
+
+function normalizeSnapshot(accounts, usage) {
+  const byId = new Map();
+  for (const account of accounts) {
+    if (account && typeof account === "object" && account.id) {
+      byId.set(String(account.id), account);
+    }
+  }
+
+  const rows = [];
+  const seen = new Set();
+  for (const [id, snap] of Object.entries(usage || {})) {
+    seen.add(id);
+    rows.push(buildRow(id, byId.get(id) || {}, snap || {}));
+  }
+
+  for (const [id, account] of byId.entries()) {
+    if (!seen.has(id)) {
+      rows.push(buildRow(id, account, {}));
+    }
+  }
+
+  rows.sort((a, b) => a.account.localeCompare(b.account));
+  return {
+    generatedAt: new Date().toISOString(),
+    accounts: rows,
+  };
+}
+
+function applyAccountFilter(snapshot, opts) {
+  if (opts.all) {
+    return snapshot;
+  }
+
+  const filter = opts.accountFilter ? String(opts.accountFilter).toLowerCase() : null;
+  const accountId = opts.accountId ? String(opts.accountId) : null;
+  const accountName = opts.accountName ? String(opts.accountName).toLowerCase() : null;
+
+  if (!filter && !accountId && !accountName) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    accounts: snapshot.accounts.filter((row) => {
+      if (accountId) {
+        return row.id === accountId;
+      }
+      if (accountName) {
+        return row.account.toLowerCase() === accountName;
+      }
+      return row.id.toLowerCase().includes(filter) || row.account.toLowerCase().includes(filter);
+    }),
+  };
+}
+
+function buildRow(id, account, snap) {
+  const five = snap.fiveHour || {};
+  const seven = snap.sevenDay || {};
+  const opus = snap.sevenDayOpus || {};
+  return {
+    id,
+    account: String(account.name || id || "?"),
+    windows: {
+      fiveHour: windowData(five),
+      sevenDay: windowData(seven),
+      sevenDayOpus: windowData(opus),
+    },
+    status: statusTags(account),
+  };
+}
+
+function windowData(value) {
+  const used = numberOrNull(value.utilization);
+  return {
+    usedPct: used,
+    remainingPct: used === null ? null : 100 - used,
+    resetsAt: value.resetsAt || null,
+  };
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function statusTags(account) {
+  const tags = [];
+  if (account.fiveHourAutoStopped === true || account.fiveHourAutoStopped === "true") {
+    tags.push("5h-STOPPED");
+  }
+  if (account.rateLimitStatus === "limited") {
+    tags.push("LIMITED");
+  }
+  if (account.schedulable === false) {
+    tags.push("unsched");
+  }
+  return tags.length ? tags : ["ok"];
+}
+
+function pct(value) {
+  if (value === null || value === undefined) {
+    return "   -  ";
+  }
+  return `${value.toFixed(1).padStart(5)}%`;
+}
+
+function resetTime(iso) {
+  if (!iso) {
+    return "-";
+  }
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) {
+    return String(iso);
+  }
+  const deltaHours = (t.getTime() - Date.now()) / 3600000;
+  const month = String(t.getMonth() + 1).padStart(2, "0");
+  const day = String(t.getDate()).padStart(2, "0");
+  const hour = String(t.getHours()).padStart(2, "0");
+  const minute = String(t.getMinutes()).padStart(2, "0");
+  const formatted = `${month}-${day} ${hour}:${minute}`;
+  return deltaHours >= 0 ? `${formatted} (+${deltaHours.toFixed(1)}h)` : formatted;
+}
+
+function render(snapshot) {
+  const header =
+    `${"Account".padEnd(22)} ` +
+    `${"5h used".padStart(8)} ${"5h left".padStart(8)} ${"5h reset".padEnd(22)} ` +
+    `${"7d used".padStart(8)} ${"7d left".padStart(8)} ${"7d reset".padEnd(22)} ` +
+    `${"Opus used".padStart(9)} ${"Opus left".padStart(9)} ${"Opus reset".padEnd(22)} Status`;
+  const lines = [header, "-".repeat(header.length)];
+
+  for (const row of snapshot.accounts) {
+    const five = row.windows.fiveHour;
+    const seven = row.windows.sevenDay;
+    const opus = row.windows.sevenDayOpus;
+    lines.push(
+      `${row.account.slice(0, 22).padEnd(22)} ` +
+      `${pct(five.usedPct).padStart(8)} ${pct(five.remainingPct).padStart(8)} ${resetTime(five.resetsAt).padEnd(22)} ` +
+      `${pct(seven.usedPct).padStart(8)} ${pct(seven.remainingPct).padStart(8)} ${resetTime(seven.resetsAt).padEnd(22)} ` +
+      `${pct(opus.usedPct).padStart(9)} ${pct(opus.remainingPct).padStart(9)} ${resetTime(opus.resetsAt).padEnd(22)} ` +
+      row.status.join(",")
+    );
+  }
+
+  if (snapshot.accounts.length === 0) {
+    lines.push("(no accounts returned)");
+  }
+  return lines.join("\n");
+}
+
+function cachePath() {
+  const home = process.env.HOME || process.cwd();
+  return process.env.CRS_CACHE_FILE || `${home}/.claude/crs-balance-status-cache.json`;
+}
+
+function readCachedSnapshot(opts) {
+  try {
+    const fs = require("fs");
+    const raw = fs.readFileSync(cachePath(), "utf8");
+    const cached = JSON.parse(raw);
+    if (!cached || !cached.generatedAt || !cached.snapshot) {
+      return null;
+    }
+    const ageSeconds = (Date.now() - new Date(cached.generatedAt).getTime()) / 1000;
+    return ageSeconds <= opts.cacheSeconds ? cached.snapshot : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeCachedSnapshot(snapshot) {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const file = cachePath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ generatedAt: new Date().toISOString(), snapshot }), "utf8");
+  } catch (_) {
+    // statusLine 场景不能因为缓存写入失败影响 Claude Code 界面。
+  }
+}
+
+const ANSI = {
+  reset: "\x1b[0m",
+  dim: "\x1b[2m",
+  cyan: "\x1b[36m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  red: "\x1b[31m",
+  teal: "\x1b[38;5;80m",
+};
+
+function color(text, code) {
+  if (process.env.CRS_NO_COLOR) {
+    return text;
+  }
+  return `${code}${text}${ANSI.reset}`;
+}
+
+function compactPct(value) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  return `${Math.max(0, value).toFixed(0)}%`;
+}
+
+function usageColor(value) {
+  if (value === null || value === undefined) {
+    return ANSI.dim;
+  }
+  if (value >= 80) {
+    return ANSI.red;
+  }
+  if (value >= 50) {
+    return ANSI.yellow;
+  }
+  return ANSI.teal;
+}
+
+function compactUsageBar(value) {
+  if (value === null || value === undefined) {
+    return `${color("░░░░░░░░░░", ANSI.dim)} ${color("-", ANSI.dim)}`;
+  }
+  const used = Math.max(0, Math.min(100, value));
+  const filled = Math.round(used / 10);
+  const bar = "▓".repeat(filled) + "░".repeat(10 - filled);
+  const code = usageColor(used);
+  return `${color(bar, code)} ${color(compactPct(used), code)}`;
+}
+
+function compactReset(iso) {
+  if (!iso) {
+    return "";
+  }
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) {
+    return "";
+  }
+  const deltaMinutes = Math.round((t.getTime() - Date.now()) / 60000);
+  if (deltaMinutes < 0) {
+    return "";
+  }
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes}m`;
+  }
+  const hours = deltaMinutes / 60;
+  if (hours < 24) {
+    return `${hours.toFixed(1)}h`;
+  }
+  return `${(hours / 24).toFixed(1)}d`;
+}
+
+function windowStatus(label, window) {
+  const reset = compactReset(window.resetsAt);
+  const resetText = reset ? ` ${color(`reset ${reset}`, ANSI.dim)}` : "";
+  return `${color(label, ANSI.dim)} ${compactUsageBar(window.usedPct)}${resetText}`;
+}
+
+function renderStatusline(snapshot, opts) {
+  if (opts.missingCredentials) {
+    return "CRS 未配置";
+  }
+  const filtered = applyAccountFilter(snapshot, opts);
+  if (!opts.all && !opts.accountId && !opts.accountName && !opts.accountFilter) {
+    return "CRS 设置 CRS_ACCOUNT_NAME";
+  }
+  if (filtered.accounts.length === 0) {
+    return "CRS 未匹配账号";
+  }
+  const row = filtered.accounts[0];
+  const status = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
+  return `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour)} ${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay)}${status}`;
+}
+
+async function once(opts, tokenHolder) {
+  if (!tokenHolder.token) {
+    tokenHolder.token = await login(opts);
+  }
+  try {
+    return await fetchSnapshot(opts, tokenHolder.token);
+  } catch (err) {
+    if (err.status === 401) {
+      tokenHolder.token = await login(opts);
+      return fetchSnapshot(opts, tokenHolder.token);
+    }
+    throw err;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const tokenHolder = { token: null };
+
+  if (opts.statusline) {
+    const cached = readCachedSnapshot(opts);
+    if (cached) {
+      console.log(renderStatusline(cached, opts));
+      return;
+    }
+    if (opts.missingCredentials) {
+      console.log(renderStatusline({ generatedAt: new Date().toISOString(), accounts: [] }, opts));
+      return;
+    }
+    const snapshot = await once(opts, tokenHolder);
+    writeCachedSnapshot(snapshot);
+    console.log(renderStatusline(snapshot, opts));
+    return;
+  }
+
+  while (true) {
+    const snapshot = applyAccountFilter(await once(opts, tokenHolder), opts);
+    if (opts.json) {
+      console.log(JSON.stringify(snapshot, null, 2));
+    } else {
+      console.log(`[${new Date(snapshot.generatedAt).toLocaleString()}] CRS Claude 余额快照`);
+      console.log(render(snapshot));
+    }
+
+    if (!opts.watch) {
+      return;
+    }
+    await sleep(opts.interval * 1000);
+  }
+}
+
+main().catch((err) => {
+  const cause = err && err.cause && err.cause.message ? `: ${err.cause.message}` : "";
+  const message = err && err.message ? `${err.message}${cause}` : String(err);
+  console.error(`crs-balance: ${message}`);
+  process.exit(1);
+});

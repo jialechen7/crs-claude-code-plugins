@@ -414,7 +414,7 @@ function compactReset(iso) {
   }
   const deltaMinutes = Math.round((t.getTime() - Date.now()) / 60000);
   if (deltaMinutes < 0) {
-    return "";
+    return "idle";
   }
   if (deltaMinutes < 60) {
     return `${deltaMinutes}m`;
@@ -426,9 +426,18 @@ function compactReset(iso) {
   return `${(hours / 24).toFixed(1)}d`;
 }
 
+function isIdleWindow(window) {
+  return window.usedPct !== null && window.usedPct !== undefined && window.usedPct <= 0;
+}
+
 function windowStatus(label, window) {
   const reset = compactReset(window.resetsAt);
-  const resetText = reset ? ` ${color(`reset ${reset}`, ANSI.dim)}` : "";
+  let resetText = "";
+  if (isIdleWindow(window) || reset === "idle") {
+    resetText = ` ${color("idle", ANSI.dim)}`;
+  } else if (reset) {
+    resetText = ` ${color(`reset ${reset}`, ANSI.dim)}`;
+  }
   return `${color(label, ANSI.dim)} ${compactUsageBar(window.usedPct)}${resetText}`;
 }
 

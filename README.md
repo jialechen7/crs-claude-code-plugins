@@ -60,3 +60,13 @@ export CRS_ACCOUNT_NAME='your_account_name'
 ```
 
 更多配置见 [crs-balance/README.md](crs-balance/README.md)。
+
+## 与其他 statusLine 插件共存
+
+Claude Code 的 `settings.json` 里 `statusLine` 字段全局唯一,装多个 statusLine 插件会互相覆盖。本插件采用**包装而非覆盖**策略:
+
+- 安装时如果检测到 `statusLine.command` 已经被别的插件占用(例如 `claude-hud`),会把那条命令保存到 `~/.claude/crs-statusline.upstream`,然后把 `statusLine` 指向本插件 wrapper。
+- 运行时本插件 wrapper 会先用同一份 stdin 跑 upstream 命令,再 append 自己的输出,两段内容用换行拼接显示。
+- 如果之后其他插件的 setup(如 `/claude-hud:setup`)再次踹掉了本插件的 wrapper,**重新跑一次一键安装脚本即可恢复**,upstream 文件已在则不会被覆盖。
+
+如果想撤掉接管关系,删掉 `~/.claude/crs-statusline.upstream` 即可。

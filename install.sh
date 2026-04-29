@@ -6,6 +6,7 @@ PLUGIN_ID="crs-balance@crs-tools"
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 ENV_FILE="${CRS_ENV_FILE:-$CONFIG_DIR/crs-balance.env}"
 WRAPPER="$CONFIG_DIR/crs-statusline.sh"
+UPSTREAM_FILE="$CONFIG_DIR/crs-statusline.upstream"
 SETTINGS="$CONFIG_DIR/settings.json"
 
 need() {
@@ -89,14 +90,23 @@ WRAP
 chmod +x "$WRAPPER"
 
 echo "==> 配置 Claude Code statusLine"
-node - "$SETTINGS" "$WRAPPER" <<'NODE'
+node - "$SETTINGS" "$WRAPPER" "$UPSTREAM_FILE" <<'NODE'
 const fs = require("fs");
-const [settingsPath, wrapper] = process.argv.slice(2);
+const [settingsPath, wrapper, upstreamFile] = process.argv.slice(2);
 let data = {};
 if (fs.existsSync(settingsPath)) {
   const raw = fs.readFileSync(settingsPath, "utf8").trim();
   data = raw ? JSON.parse(raw) : {};
 }
+
+// 接管原 statusLine:如果当前指向的不是 crs wrapper,就把它当作上游保存。
+// 仅在上游文件不存在时写入 — 否则反复跑 install.sh 会把 crs wrapper 自己存为上游,造成递归。
+const existing = data.statusLine && typeof data.statusLine.command === "string" ? data.statusLine.command.trim() : "";
+if (existing && existing !== wrapper && !fs.existsSync(upstreamFile)) {
+  fs.writeFileSync(upstreamFile, existing + "\n");
+  console.log(`==> 已接管原 statusLine 命令到 ${upstreamFile}`);
+}
+
 data.statusLine = {
   type: "command",
   command: wrapper,

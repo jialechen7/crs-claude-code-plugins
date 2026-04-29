@@ -11,12 +11,24 @@ if [[ -f "$env_file" ]]; then
   source "$env_file"
 fi
 
-run_hud() {
+run_upstream() {
   case "$input" in
     \{*) ;;
     *) return 0 ;;
   esac
 
+  # 首选:install.sh 接管时记录的上游 statusLine 命令。任何其他 statusline 插件都能这样接进来。
+  local upstream_file="$config_dir/crs-statusline.upstream"
+  if [[ -s "$upstream_file" ]]; then
+    local upstream_cmd
+    upstream_cmd="$(tr -d '\r' < "$upstream_file" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    if [[ -n "$upstream_cmd" ]]; then
+      printf '%s' "$input" | bash -c "$upstream_cmd" 2>/dev/null || true
+      return 0
+    fi
+  fi
+
+  # 兼容 fallback:老用户没有 upstream 文件,但装了 claude-hud 的情况。
   local hud_dir
   hud_dir="$(
     ls -d "$config_dir"/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null |
@@ -39,13 +51,13 @@ run_crs() {
   fi
 }
 
-hud="$(run_hud)"
+upstream="$(run_upstream)"
 crs="$(run_crs)"
 
-if [[ -n "$hud" && -n "$crs" ]]; then
-  printf '%s\n%s\n' "$hud" "$crs"
+if [[ -n "$upstream" && -n "$crs" ]]; then
+  printf '%s\n%s\n' "$upstream" "$crs"
 elif [[ -n "$crs" ]]; then
   printf '%s\n' "$crs"
 else
-  printf '%s\n' "$hud"
+  printf '%s\n' "$upstream"
 fi

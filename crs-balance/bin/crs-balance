@@ -7,6 +7,61 @@ const DEFAULT_INTERVAL_SECONDS = 300;
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_CACHE_SECONDS = 300;
 
+function stripInlineComment(value) {
+  let quote = null;
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i];
+    if ((ch === "'" || ch === '"') && value[i - 1] !== "\\") {
+      quote = quote === ch ? null : quote || ch;
+    }
+    if (ch === "#" && !quote) {
+      return value.slice(0, i).trim();
+    }
+  }
+  return value.trim();
+}
+
+function parseEnvValue(value) {
+  const trimmed = stripInlineComment(value);
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === "'" && last === "'") || (first === '"' && last === '"')) {
+      const inner = trimmed.slice(1, -1);
+      return first === '"'
+        ? inner.replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t").replace(/\\"/g, '"').replace(/\\\\/g, "\\")
+        : inner;
+    }
+  }
+  return trimmed;
+}
+
+function loadEnvFile() {
+  const fs = require("fs");
+  const path = require("path");
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME || process.cwd(), ".claude");
+  const envFile = process.env.CRS_ENV_FILE || path.join(configDir, "crs-balance.env");
+  let raw;
+  try {
+    raw = fs.readFileSync(envFile, "utf8");
+  } catch (_) {
+    return;
+  }
+
+  for (const line of raw.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!match) {
+      continue;
+    }
+    const [, key, value] = match;
+    if (process.env[key] === undefined) {
+      process.env[key] = parseEnvValue(value);
+    }
+  }
+}
+
+loadEnvFile();
+
 function readOption(key, envName, fallback = undefined) {
   return (
     process.env[envName] ||

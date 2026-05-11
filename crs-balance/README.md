@@ -17,9 +17,11 @@ claude plugin marketplace add https://github.com/jialechen7/crs-claude-code-plug
 claude plugin install crs-balance@crs-tools --scope user
 ```
 
+已安装用户升级后，如果 statusLine 被其他插件覆盖，在 Claude Code 中运行 `/crs-balance:statusline-repair`。
+
 ## 配置
 
-推荐写入 `~/.claude/crs-balance.env`；一键安装脚本会自动创建模板，`crs-statusline` 会自动读取它：
+推荐写入 `~/.claude/crs-balance.env`；一键安装脚本会自动创建模板，`crs-balance` 和 `crs-statusline` 都会自动读取它，不需要再写到 `~/.zshrc`：
 
 ```bash
 export CRS_BASE_URL=https://250924.xyz
@@ -53,6 +55,14 @@ export CRS_NO_COLOR=1
 ```
 
 如果已安装 `claude-hud`，`crs-statusline` 会保留原 HUD 输出，并把 CRS 状态放到单独一行。没有安装 `claude-hud` 时，只显示 CRS 行。
+
+如果 `claude-hud` 或其他 statusLine 插件后续覆盖了 `~/.claude/settings.json`，在 Claude Code 中运行：
+
+```text
+/crs-balance:statusline-repair
+```
+
+该命令会重新创建 `~/.claude/crs-statusline.sh`，保存当前上游 statusLine 命令，并把 `statusLine` 指回 CRS wrapper。完成后重启 Claude Code。
 
 示例：
 

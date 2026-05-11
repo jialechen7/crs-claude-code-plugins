@@ -26,7 +26,7 @@ crs-balance $ARGUMENTS
 
 ## 配置来源
 
-优先使用插件安装时填写的 `userConfig`，也兼容环境变量：
+配置读取顺序兼容以下来源；`~/.claude/crs-balance.env` 会由 `crs-balance` 自动读取，不需要用户写入 `~/.zshrc`：
 
 - `CRS_BASE_URL`
 - `CRS_ADMIN_USER`

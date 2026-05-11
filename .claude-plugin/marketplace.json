@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Claude Code plugins for CRS account monitoring.",
-    "version": "0.2.1"
+    "version": "0.2.2"
   },
   "plugins": [
     {
       "name": "crs-balance",
       "source": "./crs-balance",
       "description": "查看 CRS 上游 Claude 账号 5h / 7d 使用量，并集成 Claude Code statusLine。",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "category": "monitoring",
       "tags": ["crs", "claude", "balance", "usage", "statusline"]
     }

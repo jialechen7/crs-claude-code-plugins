@@ -31,6 +31,12 @@ claude plugin marketplace add https://github.com/jialechen7/crs-claude-code-plug
 claude plugin install crs-balance@crs-tools --scope user
 ```
 
+已安装用户升级后，如果 statusLine 被其他插件覆盖，在 Claude Code 中运行：
+
+```text
+/crs-balance:statusline-repair
+```
+
 ## 使用
 
 Claude Code 中可调用：
@@ -59,6 +65,8 @@ export CRS_ADMIN_PASS='your_password'
 export CRS_ACCOUNT_NAME='your_account_name'
 ```
 
+`crs-balance` 会直接读取这份文件；不需要把账号和密码再写到 `~/.zshrc`。
+
 更多配置见 [crs-balance/README.md](crs-balance/README.md)。
 
 ## 与其他 statusLine 插件共存
@@ -67,6 +75,6 @@ Claude Code 的 `settings.json` 里 `statusLine` 字段全局唯一,装多个 st
 
 - 安装时如果检测到 `statusLine.command` 已经被别的插件占用(例如 `claude-hud`),会把那条命令保存到 `~/.claude/crs-statusline.upstream`,然后把 `statusLine` 指向本插件 wrapper。
 - 运行时本插件 wrapper 会先用同一份 stdin 跑 upstream 命令,再 append 自己的输出,两段内容用换行拼接显示。
-- 如果之后其他插件的 setup(如 `/claude-hud:setup`)再次踹掉了本插件的 wrapper,**重新跑一次一键安装脚本即可恢复**,upstream 文件已在则不会被覆盖。
+- 如果之后其他插件的 setup(如 `/claude-hud:setup`)再次踹掉了本插件的 wrapper,运行 `/crs-balance:statusline-repair` 或重新跑一次一键安装脚本即可恢复。repair 会把当前非 CRS 的 `statusLine.command` 更新到 upstream,再把 `statusLine` 指回本插件 wrapper。
 
 如果想撤掉接管关系,删掉 `~/.claude/crs-statusline.upstream` 即可。

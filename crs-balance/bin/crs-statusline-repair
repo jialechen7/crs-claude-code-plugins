@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+wrapper="$config_dir/crs-statusline.sh"
+upstream_file="$config_dir/crs-statusline.upstream"
+settings="$config_dir/settings.json"
+
+mkdir -p "$config_dir"
+
+cat > "$wrapper" <<'WRAP'
+#!/usr/bin/env bash
+set -u
+
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+env_file="${CRS_ENV_FILE:-$config_dir/crs-balance.env}"
+
+if [[ -f "$env_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$env_file"
+fi
+
+status_bin="$(
+  ls -d "$config_dir"/plugins/cache/crs-tools/crs-balance/*/bin/crs-statusline 2>/dev/null |
+    awk -F/ '{ print $(NF-2) "\t" $(0) }' |
+    sort -t. -k1,1n -k2,2n -k3,3n -k4,4n |
+    tail -1 |
+    cut -f2-
+)"
+
+if [[ -n "${status_bin:-}" && -x "$status_bin" ]]; then
+  exec "$status_bin"
+fi
+
+echo "crs 未安装"
+WRAP
+chmod +x "$wrapper"
+
+node - "$settings" "$wrapper" "$upstream_file" <<'NODE'
+const fs = require("fs");
+const [settingsPath, wrapper, upstreamFile] = process.argv.slice(2);
+
+let data = {};
+if (fs.existsSync(settingsPath)) {
+  const raw = fs.readFileSync(settingsPath, "utf8").trim();
+  data = raw ? JSON.parse(raw) : {};
+}
+
+const existing =
+  data.statusLine && typeof data.statusLine.command === "string"
+    ? data.statusLine.command.trim()
+    : "";
+const isCrsCommand =
+  existing === wrapper ||
+  /(^|[/"'\s])crs-statusline(\.sh)?([/"'\s]|$)/.test(existing);
+
+if (existing && !isCrsCommand) {
+  const previous = fs.existsSync(upstreamFile)
+    ? fs.readFileSync(upstreamFile, "utf8").trim()
+    : "";
+  if (previous !== existing) {
+    fs.writeFileSync(upstreamFile, existing + "\n");
+    console.log(`已保存上游 statusLine 到 ${upstreamFile}`);
+  }
+}
+
+data.statusLine = {
+  type: "command",
+  command: wrapper,
+};
+
+fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
+console.log(`已配置 statusLine: ${wrapper}`);
+NODE

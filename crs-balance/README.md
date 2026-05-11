@@ -40,6 +40,11 @@ export CRS_ACCOUNT_NAME='your_account_name'
 
 ```bash
 export CRS_CACHE_SECONDS=300
+# 当前 Claude Code 使用的 CRS key 会优先从 ~/.claude/settings.json 的 ANTHROPIC_AUTH_TOKEN 自动识别。
+# 如果自动识别失败，可以显式指定 key id 或 key 名称。
+# export CRS_API_KEY_ID='your_api_key_id'
+# export CRS_API_KEY_NAME='your_api_key_name'
+# export CRS_KEY_SHARE=0
 export CRS_NO_COLOR=1
 ```
 
@@ -71,6 +76,8 @@ export CRS_NO_COLOR=1
 ```text
 crs › bob-opus · 5h ▓░░░░░░░░░ 12% reset 1.6h · 7d ▓▓▓▓▓▓▓░░░ 68% reset 1.3d
 ```
+
+如果能识别当前 CRS API Key，statusLine 会在 5h 后显示 `my share xx%`，表示当前使用者的 key 在该专属账号当前 5h 窗口内的 token 消耗占整个账号所有 key 消耗的比例。窗口范围使用账号的 `fiveHour.resetsAt - 5h` 到 `fiveHour.resetsAt`，与账号刷新窗口对齐。
 
 进度条含义是已使用量：
 

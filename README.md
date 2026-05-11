@@ -65,6 +65,11 @@ export CRS_ADMIN_PASS='your_password'
 export CRS_ACCOUNT_NAME='your_account_name'
 # 或监控多个账号：
 # export CRS_ACCOUNT_NAMES='account_a,account_b'
+
+# 可选：当前 key 的 5h 窗口占比，默认会从 ANTHROPIC_AUTH_TOKEN 自动识别。
+# export CRS_API_KEY_ID='your_api_key_id'
+# export CRS_API_KEY_NAME='your_api_key_name'
+# export CRS_KEY_SHARE=0
 ```
 
 `crs-balance` 会直接读取这份文件；不需要把账号和密码再写到 `~/.zshrc`。

@@ -23,6 +23,8 @@ crs-balance $ARGUMENTS
 - `--base-url <url>`：覆盖 CRS base URL。
 - `--account-id <id>` / `--account-name <name>` / `--account-filter <text>`：只展示指定账号。
 - `--account-names <name1,name2>`：只展示多个精确匹配的账号。
+- `--api-key-id <id>` / `--api-key-name <name>` / `--api-key <key>`：指定当前 CRS key，用于计算该 key 在专属账号 5h 窗口内的 token 消耗占比。
+- `--no-key-share`：关闭当前 key 占比展示。
 - `--all`：忽略账号筛选，展示全部账号。
 
 ## 配置来源
@@ -37,5 +39,9 @@ crs-balance $ARGUMENTS
 - `CRS_ACCOUNT_NAME`
 - `CRS_ACCOUNT_NAMES`
 - `CRS_ACCOUNT_FILTER`
+- `CRS_API_KEY_ID`
+- `CRS_API_KEY_NAME`
+- `CRS_API_KEY`
+- `CRS_KEY_SHARE`
 
 凭据缺失时，不要猜测账号密码；直接提示用户在插件配置或环境变量中补齐。

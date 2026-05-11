@@ -35,7 +35,9 @@ else
   claude plugin install "$PLUGIN_ID" --scope user >/dev/null
 fi
 
+env_created=0
 if [[ ! -f "$ENV_FILE" ]]; then
+  env_created=1
   echo "==> 创建配置模板: $ENV_FILE"
   cat > "$ENV_FILE" <<'ENV'
 # CRS balance 插件配置。填完后重启 Claude Code。
@@ -52,6 +54,11 @@ export CRS_ACCOUNT_NAME="your_account_name"
 
 # 可选项
 export CRS_CACHE_SECONDS="300"
+# 当前 Claude Code 使用的 CRS key 会优先从 ~/.claude/settings.json 的 ANTHROPIC_AUTH_TOKEN 自动识别。
+# 如果自动识别失败，可以显式指定 key id 或 key 名称。
+# export CRS_API_KEY_ID="your_api_key_id"
+# export CRS_API_KEY_NAME="your_api_key_name"
+# export CRS_KEY_SHARE="0"
 # export CRS_NO_COLOR="1"
 ENV
   chmod 600 "$ENV_FILE"
@@ -74,7 +81,12 @@ fi
 "$repair_bin"
 
 printf '\n安装完成。\n\n'
-printf '下一步：\n'
-printf '1. 编辑 %s，填入 CRS_ADMIN_PASS 和账号筛选。\n' "$ENV_FILE"
-printf '2. 重启 Claude Code。\n\n'
+if [[ "$env_created" == "1" ]]; then
+  printf '下一步：\n'
+  printf '1. 编辑 %s，填入 CRS_ADMIN_PASS 和账号筛选。\n' "$ENV_FILE"
+  printf '2. 重启 Claude Code。\n\n'
+else
+  printf '已保留现有配置: %s\n' "$ENV_FILE"
+  printf '重启 Claude Code 后生效。\n\n'
+fi
 printf '配置文件权限已设置为 600；不要把该文件提交到 git。\n'

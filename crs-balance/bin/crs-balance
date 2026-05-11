@@ -62,6 +62,30 @@ function loadEnvFile() {
 
 loadEnvFile();
 
+function loadClaudeSettingsEnv() {
+  const fs = require("fs");
+  const path = require("path");
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME || process.cwd(), ".claude");
+  const settingsFile = path.join(configDir, "settings.json");
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+  } catch (_) {
+    return;
+  }
+  const env = data && typeof data.env === "object" ? data.env : null;
+  if (!env) {
+    return;
+  }
+  for (const key of ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"]) {
+    if (process.env[key] === undefined && typeof env[key] === "string") {
+      process.env[key] = env[key];
+    }
+  }
+}
+
+loadClaudeSettingsEnv();
+
 function readOption(key, envName, fallback = undefined) {
   return (
     process.env[envName] ||
@@ -97,6 +121,10 @@ function parseArgs(argv) {
     accountName: readOption("account_name", "CRS_ACCOUNT_NAME"),
     accountNames: readOption("account_names", "CRS_ACCOUNT_NAMES"),
     accountFilter: readOption("account_filter", "CRS_ACCOUNT_FILTER"),
+    apiKeyId: readOption("api_key_id", "CRS_API_KEY_ID"),
+    apiKeyName: readOption("api_key_name", "CRS_API_KEY_NAME"),
+    apiKey: readOption("api_key", "CRS_API_KEY") || process.env.ANTHROPIC_AUTH_TOKEN,
+    keyShare: readOption("key_share", "CRS_KEY_SHARE", "1"),
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -123,6 +151,14 @@ function parseArgs(argv) {
       opts.accountNames = argv[++i];
     } else if (arg === "--account-filter") {
       opts.accountFilter = argv[++i];
+    } else if (arg === "--api-key-id") {
+      opts.apiKeyId = argv[++i];
+    } else if (arg === "--api-key-name") {
+      opts.apiKeyName = argv[++i];
+    } else if (arg === "--api-key") {
+      opts.apiKey = argv[++i];
+    } else if (arg === "--no-key-share") {
+      opts.keyShare = "0";
     } else if (arg === "--cache-seconds") {
       opts.cacheSeconds = Number(argv[++i]);
     } else if (arg === "--interval") {
@@ -158,6 +194,7 @@ function parseArgs(argv) {
     ...splitList(opts.accountName),
     ...splitList(opts.accountNames),
   ].map((name) => name.toLowerCase());
+  opts.keyShareEnabled = opts.keyShare !== "0" && opts.keyShare !== "false";
   return opts;
 }
 
@@ -171,12 +208,18 @@ function printHelp() {
   --account-name <name>
   --account-names <name1,name2>
   --account-filter <text>
+  --api-key-id <id>
+  --api-key-name <name>
+  --api-key <key>
+  --no-key-share
   --all
 
 配置来源：
   插件 userConfig: base_url, admin_user, admin_pass
   环境变量: CRS_BASE_URL, CRS_ADMIN_USER, CRS_ADMIN_PASS, CRS_INTERVAL
   账号筛选环境变量: CRS_ACCOUNT_ID, CRS_ACCOUNT_NAME, CRS_ACCOUNT_NAMES, CRS_ACCOUNT_FILTER
+  当前 key 环境变量: CRS_API_KEY_ID, CRS_API_KEY_NAME, CRS_API_KEY, ANTHROPIC_AUTH_TOKEN
+  statusLine 进度条宽度: CRS_BAR_CELLS（5-40，默认 20）或 COLUMNS（auto: (cols-80)/2）
 `);
 }
 
@@ -224,6 +267,59 @@ async function login(opts) {
   return payload.token;
 }
 
+function publicBaseUrl(opts) {
+  return String(process.env.ANTHROPIC_BASE_URL || opts.baseUrl || DEFAULT_BASE_URL)
+    .replace(/\/api\/?$/, "")
+    .replace(/\/+$/, "");
+}
+
+async function resolveCurrentApiKeyId(opts, token) {
+  if (opts.apiKeyId) {
+    return String(opts.apiKeyId);
+  }
+
+  if (opts.apiKey) {
+    try {
+      const baseUrl = publicBaseUrl(opts);
+      const resp = await fetch(`${baseUrl}/apiStats/api/get-key-id`, {
+        method: "POST",
+        headers: {
+          "accept": "application/json",
+          "content-type": "application/json",
+          "user-agent": "crs-balance-plugin/0.1.0",
+        },
+        body: JSON.stringify({ apiKey: opts.apiKey }),
+      });
+      const payload = await resp.json().catch(() => null);
+      if (resp.ok && payload?.success === true && payload?.data?.id) {
+        return String(payload.data.id);
+      }
+    } catch (_) {
+      // statusLine 场景降级为不展示 key 占比。
+    }
+  }
+
+  if (opts.apiKeyName && token) {
+    try {
+      const payload = await http(
+        opts,
+        "GET",
+        `/admin/api-keys?page=1&pageSize=100&searchMode=apiKey&search=${encodeURIComponent(opts.apiKeyName)}`,
+        token
+      );
+      const items = payload?.data?.items || [];
+      const exact = items.find((item) => item?.name === opts.apiKeyName);
+      if (exact?.id) {
+        return String(exact.id);
+      }
+    } catch (_) {
+      // statusLine 场景降级为不展示 key 占比。
+    }
+  }
+
+  return null;
+}
+
 async function fetchSnapshot(opts, token) {
   const [accountsResp, usageResp] = await Promise.all([
     http(opts, "GET", "/admin/claude-accounts", token),
@@ -241,7 +337,11 @@ async function fetchSnapshot(opts, token) {
       : usageResp
     : {};
 
-  return normalizeSnapshot(accounts, usage);
+  const snapshot = normalizeSnapshot(accounts, usage);
+  if (opts.keyShareEnabled) {
+    await enrichKeyShare(snapshot, opts, token);
+  }
+  return snapshot;
 }
 
 function normalizeSnapshot(accounts, usage) {
@@ -325,6 +425,133 @@ function windowData(value) {
   };
 }
 
+function rollingWindow(resetsAt, spanHours) {
+  if (!resetsAt) {
+    return null;
+  }
+  const reset = new Date(resetsAt);
+  if (Number.isNaN(reset.getTime())) {
+    return null;
+  }
+  const start = new Date(reset.getTime() - spanHours * 60 * 60 * 1000);
+  const now = new Date();
+  const end = now < reset ? now : reset;
+  return {
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+  };
+}
+
+function fiveHourWindow(row) {
+  return rollingWindow(row?.windows?.fiveHour?.resetsAt, 5);
+}
+
+function sevenDayWindow(row) {
+  return rollingWindow(row?.windows?.sevenDay?.resetsAt, 24 * 7);
+}
+
+async function fetchAccountUsageSummary(opts, token, accountId, window, apiKeyId) {
+  const params = new URLSearchParams({
+    platform: "claude",
+    startDate: window.startDate,
+    endDate: window.endDate,
+    page: "1",
+    pageSize: "1",
+  });
+  if (apiKeyId) {
+    params.set("apiKeyId", apiKeyId);
+  }
+  const payload = await http(
+    opts,
+    "GET",
+    `/admin/accounts/${encodeURIComponent(accountId)}/usage-records?${params.toString()}`,
+    token
+  );
+  return payload?.data?.summary || null;
+}
+
+async function fetchRequestDetailUsageSummary(opts, token, accountId, window, apiKeyId) {
+  const params = new URLSearchParams({
+    accountId,
+    startDate: window.startDate,
+    endDate: window.endDate,
+    page: "1",
+    pageSize: "1",
+  });
+  if (apiKeyId) {
+    params.set("apiKeyId", apiKeyId);
+  }
+  const payload = await http(opts, "GET", `/admin/request-details?${params.toString()}`, token);
+  const data = payload?.data;
+  if (!data || data.captureEnabled === false || !data.summary) {
+    return null;
+  }
+  return data.summary;
+}
+
+async function fetchKeyShareUsageSummary(opts, token, accountId, window, apiKeyId) {
+  const spanHours = (new Date(window.endDate).getTime() - new Date(window.startDate).getTime()) / 3600000;
+  if (spanHours <= 6) {
+    const requestDetailSummary = await fetchRequestDetailUsageSummary(opts, token, accountId, window, apiKeyId);
+    if (requestDetailSummary) {
+      return requestDetailSummary;
+    }
+  }
+  return fetchAccountUsageSummary(opts, token, accountId, window, apiKeyId);
+}
+
+function summaryTotalCost(summary) {
+  if (!summary) {
+    return 0;
+  }
+  const cost = Number(summary.totalCost);
+  return Number.isFinite(cost) && cost > 0 ? cost : 0;
+}
+
+async function computeKeyShare(opts, token, accountId, window, apiKeyId) {
+  if (!window) {
+    return null;
+  }
+  try {
+    const [totalSummary, keySummary] = await Promise.all([
+      fetchKeyShareUsageSummary(opts, token, accountId, window, null),
+      fetchKeyShareUsageSummary(opts, token, accountId, window, apiKeyId),
+    ]);
+    const totalCost = summaryTotalCost(totalSummary);
+    const keyCost = summaryTotalCost(keySummary);
+    if (totalCost <= 0) {
+      return { keyCost, totalCost, pct: null };
+    }
+    return { keyCost, totalCost, pct: (keyCost / totalCost) * 100 };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function enrichKeyShare(snapshot, opts, token) {
+  snapshot.keyShareAttempted = true;
+  const apiKeyId = await resolveCurrentApiKeyId(opts, token);
+  if (!apiKeyId) {
+    return;
+  }
+
+  const filtered = applyAccountFilter(snapshot, opts).accounts;
+  await Promise.all(filtered.map(async (row) => {
+    const [fiveHourShare, sevenDayShare] = await Promise.all([
+      computeKeyShare(opts, token, row.id, fiveHourWindow(row), apiKeyId),
+      computeKeyShare(opts, token, row.id, sevenDayWindow(row), apiKeyId),
+    ]);
+    if (!fiveHourShare && !sevenDayShare) {
+      return;
+    }
+    row.keyShare = {
+      apiKeyId,
+      fiveHour: fiveHourShare,
+      sevenDay: sevenDayShare,
+    };
+  }));
+}
+
 function numberOrNull(value) {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -398,9 +625,19 @@ function render(snapshot) {
   return lines.join("\n");
 }
 
+const CACHE_SCHEMA = 2;
+
 function cachePath() {
   const home = process.env.HOME || process.cwd();
-  return process.env.CRS_CACHE_FILE || `${home}/.claude/crs-balance-status-cache.json`;
+  return process.env.CRS_CACHE_FILE || `${home}/.claude/crs-balance-status-cache-v${CACHE_SCHEMA}.json`;
+}
+
+function apiKeyFingerprint(opts) {
+  const apiKey = opts.apiKey || "";
+  if (!apiKey) {
+    return "anon";
+  }
+  return require("crypto").createHash("sha256").update(apiKey).digest("hex").slice(0, 12);
 }
 
 function readCachedSnapshot(opts) {
@@ -411,6 +648,15 @@ function readCachedSnapshot(opts) {
     if (!cached || !cached.generatedAt || !cached.snapshot) {
       return null;
     }
+    if (cached.schema !== CACHE_SCHEMA) {
+      return null;
+    }
+    if (cached.apiKeyFingerprint !== apiKeyFingerprint(opts)) {
+      return null;
+    }
+    if (opts.keyShareEnabled && cached.snapshot.keyShareAttempted !== true) {
+      return null;
+    }
     const ageSeconds = (Date.now() - new Date(cached.generatedAt).getTime()) / 1000;
     return ageSeconds <= opts.cacheSeconds ? cached.snapshot : null;
   } catch (_) {
@@ -418,13 +664,22 @@ function readCachedSnapshot(opts) {
   }
 }
 
-function writeCachedSnapshot(snapshot) {
+function writeCachedSnapshot(opts, snapshot) {
   try {
     const fs = require("fs");
     const path = require("path");
     const file = cachePath();
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ generatedAt: new Date().toISOString(), snapshot }), "utf8");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        schema: CACHE_SCHEMA,
+        generatedAt: new Date().toISOString(),
+        apiKeyFingerprint: apiKeyFingerprint(opts),
+        snapshot,
+      }),
+      "utf8"
+    );
   } catch (_) {
     // statusLine 场景不能因为缓存写入失败影响 Claude Code 界面。
   }
@@ -449,9 +704,9 @@ function color(text, code) {
 
 function compactPct(value) {
   if (value === null || value === undefined) {
-    return "-";
+    return "  -";
   }
-  return `${Math.max(0, value).toFixed(0)}%`;
+  return `${Math.max(0, value).toFixed(0)}%`.padStart(4);
 }
 
 function usageColor(value) {
@@ -467,15 +722,48 @@ function usageColor(value) {
   return ANSI.teal;
 }
 
-function compactUsageBar(value) {
+const BAR_CELLS_MIN = 5;
+const BAR_CELLS_MAX = 40;
+const BAR_CELLS_DEFAULT = 20;
+const STATUSLINE_NON_BAR_WIDTH = 80;
+
+function resolveBarCells() {
+  const explicit = Number(process.env.CRS_BAR_CELLS);
+  if (Number.isFinite(explicit) && explicit >= BAR_CELLS_MIN) {
+    return Math.min(BAR_CELLS_MAX, Math.floor(explicit));
+  }
+  const cols = (() => {
+    if (process.stdout && Number.isFinite(process.stdout.columns) && process.stdout.columns > 0) {
+      return process.stdout.columns;
+    }
+    const env = Number(process.env.COLUMNS);
+    return Number.isFinite(env) && env > 0 ? env : 0;
+  })();
+  if (!cols) {
+    return BAR_CELLS_DEFAULT;
+  }
+  const perBar = Math.floor((cols - STATUSLINE_NON_BAR_WIDTH) / 2);
+  return Math.max(BAR_CELLS_MIN, Math.min(BAR_CELLS_MAX, perBar));
+}
+
+const BAR_CELLS = resolveBarCells();
+const BAR_CELL_PCT = 100 / BAR_CELLS;
+
+function compactUsageBar(value, mineValue) {
   if (value === null || value === undefined) {
-    return `${color("░░░░░░░░░░", ANSI.dim)} ${color("-", ANSI.dim)}`;
+    return `${color("░".repeat(BAR_CELLS), ANSI.dim)} ${color("-", ANSI.dim)}`;
   }
   const used = Math.max(0, Math.min(100, value));
-  const filled = Math.round(used / 10);
-  const bar = "▓".repeat(filled) + "░".repeat(10 - filled);
+  const mine = Math.max(0, Math.min(used, mineValue == null ? 0 : mineValue));
+  const usedCells = used > 0 ? Math.max(1, Math.round(used / BAR_CELL_PCT)) : 0;
+  const mineCells = Math.min(usedCells, Math.round(mine / BAR_CELL_PCT));
+  const othersCells = usedCells - mineCells;
+  const restCells = BAR_CELLS - usedCells;
   const code = usageColor(used);
-  return `${color(bar, code)} ${color(compactPct(used), code)}`;
+  const mineBar = color("█".repeat(mineCells), ANSI.cyan);
+  const othersBar = color("▓".repeat(othersCells), code);
+  const restBar = color("░".repeat(restCells), ANSI.dim);
+  return `${mineBar}${othersBar}${restBar} ${color(compactPct(used), code)}`;
 }
 
 function compactReset(iso) {
@@ -504,15 +792,39 @@ function isIdleWindow(window) {
   return window.usedPct !== null && window.usedPct !== undefined && window.usedPct <= 0;
 }
 
-function windowStatus(label, window) {
+const RESET_FIELD_WIDTH = 11;
+
+function windowStatus(label, window, mineEffectivePct) {
   const reset = compactReset(window.resetsAt);
-  let resetText = "";
+  let resetText = " ".repeat(RESET_FIELD_WIDTH);
   if (isIdleWindow(window) || reset === "idle") {
-    resetText = ` ${color("idle", ANSI.dim)}`;
+    resetText = color("idle".padEnd(RESET_FIELD_WIDTH), ANSI.dim);
   } else if (reset) {
-    resetText = ` ${color(`reset ${reset}`, ANSI.dim)}`;
+    resetText = color(`reset ${reset.padStart(5)}`.padEnd(RESET_FIELD_WIDTH), ANSI.dim);
   }
-  return `${color(label, ANSI.dim)} ${compactUsageBar(window.usedPct)}${resetText}`;
+  return `${color(label, ANSI.dim)} ${compactUsageBar(window.usedPct, mineEffectivePct)} ${resetText}`;
+}
+
+function mineEffectivePct(row, windowKey) {
+  const share = row.keyShare && row.keyShare[windowKey];
+  const window = row.windows && row.windows[windowKey];
+  if (!share || share.pct == null || !window || window.usedPct == null) {
+    return null;
+  }
+  return (window.usedPct * share.pct) / 100;
+}
+
+function keyShareStatus(row, windowKey) {
+  const share = row.keyShare && row.keyShare[windowKey];
+  if (!share) {
+    return "";
+  }
+  if (share.pct === null || share.pct === undefined) {
+    return ` ${color("·", ANSI.dim)} ${color("mine", ANSI.dim)} ${color("  n/a", ANSI.dim)}`;
+  }
+  const absolute = mineEffectivePct(row, windowKey) || 0;
+  const pctText = `${absolute.toFixed(1)}%`.padStart(5);
+  return ` ${color("·", ANSI.dim)} ${color("mine", ANSI.dim)} ${color(pctText, ANSI.cyan)}`;
 }
 
 function renderStatusline(snapshot, opts) {
@@ -530,7 +842,7 @@ function renderStatusline(snapshot, opts) {
   const accountWidth = Math.max(...filtered.accounts.map((row) => row.account.length));
   const rows = filtered.accounts.map((row) => {
     const status = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
-    return `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account.padEnd(accountWidth), ANSI.dim)} ${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour)} ${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay)}${status}`;
+    return `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account.padEnd(accountWidth), ANSI.dim)} ${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour, mineEffectivePct(row, "fiveHour"))}${keyShareStatus(row, "fiveHour")} ${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay, mineEffectivePct(row, "sevenDay"))}${keyShareStatus(row, "sevenDay")}${status}`;
   });
   return rows.join("\n");
 }
@@ -569,7 +881,7 @@ async function main() {
       return;
     }
     const snapshot = await once(opts, tokenHolder);
-    writeCachedSnapshot(snapshot);
+    writeCachedSnapshot(opts, snapshot);
     console.log(renderStatusline(snapshot, opts));
     return;
   }

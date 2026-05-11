@@ -63,6 +63,8 @@ export CRS_BASE_URL=https://250924.xyz
 export CRS_ADMIN_USER=admin
 export CRS_ADMIN_PASS='your_password'
 export CRS_ACCOUNT_NAME='your_account_name'
+# 或监控多个账号：
+# export CRS_ACCOUNT_NAMES='account_a,account_b'
 ```
 
 `crs-balance` 会直接读取这份文件；不需要把账号和密码再写到 `~/.zshrc`。

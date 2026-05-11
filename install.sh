@@ -43,8 +43,10 @@ export CRS_BASE_URL="https://250924.xyz"
 export CRS_ADMIN_USER="admin"
 export CRS_ADMIN_PASS="your_password"
 
-# 三选一。推荐用精确账号名或账号 id，避免展示全部账号。
+# 按需选择。推荐用精确账号名或账号 id，避免展示全部账号。
 export CRS_ACCOUNT_NAME="your_account_name"
+# 多账号用逗号分隔：
+# export CRS_ACCOUNT_NAMES="account_a,account_b"
 # export CRS_ACCOUNT_ID="your_account_id"
 # export CRS_ACCOUNT_FILTER="name_or_id_fragment"
 

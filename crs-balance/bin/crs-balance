@@ -71,6 +71,16 @@ function readOption(key, envName, fallback = undefined) {
   );
 }
 
+function splitList(value) {
+  if (!value) {
+    return [];
+  }
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function parseArgs(argv) {
   const opts = {
     watch: false,
@@ -85,6 +95,7 @@ function parseArgs(argv) {
     cacheSeconds: Number(readOption("cache_seconds", "CRS_CACHE_SECONDS", DEFAULT_CACHE_SECONDS)),
     accountId: readOption("account_id", "CRS_ACCOUNT_ID"),
     accountName: readOption("account_name", "CRS_ACCOUNT_NAME"),
+    accountNames: readOption("account_names", "CRS_ACCOUNT_NAMES"),
     accountFilter: readOption("account_filter", "CRS_ACCOUNT_FILTER"),
   };
 
@@ -108,6 +119,8 @@ function parseArgs(argv) {
       opts.accountId = argv[++i];
     } else if (arg === "--account-name") {
       opts.accountName = argv[++i];
+    } else if (arg === "--account-names") {
+      opts.accountNames = argv[++i];
     } else if (arg === "--account-filter") {
       opts.accountFilter = argv[++i];
     } else if (arg === "--cache-seconds") {
@@ -141,6 +154,10 @@ function parseArgs(argv) {
   if (!Number.isFinite(opts.cacheSeconds) || opts.cacheSeconds < 0) {
     throw new Error("--cache-seconds 必须是非负秒数。");
   }
+  opts.accountNamesList = [
+    ...splitList(opts.accountName),
+    ...splitList(opts.accountNames),
+  ].map((name) => name.toLowerCase());
   return opts;
 }
 
@@ -152,13 +169,14 @@ function printHelp() {
 筛选：
   --account-id <id>
   --account-name <name>
+  --account-names <name1,name2>
   --account-filter <text>
   --all
 
 配置来源：
   插件 userConfig: base_url, admin_user, admin_pass
   环境变量: CRS_BASE_URL, CRS_ADMIN_USER, CRS_ADMIN_PASS, CRS_INTERVAL
-  账号筛选环境变量: CRS_ACCOUNT_ID, CRS_ACCOUNT_NAME, CRS_ACCOUNT_FILTER
+  账号筛选环境变量: CRS_ACCOUNT_ID, CRS_ACCOUNT_NAME, CRS_ACCOUNT_NAMES, CRS_ACCOUNT_FILTER
 `);
 }
 
@@ -261,9 +279,10 @@ function applyAccountFilter(snapshot, opts) {
 
   const filter = opts.accountFilter ? String(opts.accountFilter).toLowerCase() : null;
   const accountId = opts.accountId ? String(opts.accountId) : null;
-  const accountName = opts.accountName ? String(opts.accountName).toLowerCase() : null;
+  const accountNames = Array.isArray(opts.accountNamesList) ? opts.accountNamesList : [];
+  const accountNameSet = new Set(accountNames);
 
-  if (!filter && !accountId && !accountName) {
+  if (!filter && !accountId && accountNameSet.size === 0) {
     return snapshot;
   }
 
@@ -273,8 +292,8 @@ function applyAccountFilter(snapshot, opts) {
       if (accountId) {
         return row.id === accountId;
       }
-      if (accountName) {
-        return row.account.toLowerCase() === accountName;
+      if (accountNameSet.size > 0) {
+        return accountNameSet.has(row.account.toLowerCase());
       }
       return row.id.toLowerCase().includes(filter) || row.account.toLowerCase().includes(filter);
     }),
@@ -501,15 +520,18 @@ function renderStatusline(snapshot, opts) {
     return "CRS 未配置";
   }
   const filtered = applyAccountFilter(snapshot, opts);
-  if (!opts.all && !opts.accountId && !opts.accountName && !opts.accountFilter) {
+  const hasAccountNames = Array.isArray(opts.accountNamesList) && opts.accountNamesList.length > 0;
+  if (!opts.all && !opts.accountId && !hasAccountNames && !opts.accountFilter) {
     return "CRS 设置 CRS_ACCOUNT_NAME";
   }
   if (filtered.accounts.length === 0) {
     return "CRS 未匹配账号";
   }
-  const row = filtered.accounts[0];
-  const status = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
-  return `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour)} ${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay)}${status}`;
+  const rows = filtered.accounts.map((row) => {
+    const status = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
+    return `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour)} ${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay)}${status}`;
+  });
+  return rows.join("\n");
 }
 
 async function once(opts, tokenHolder) {

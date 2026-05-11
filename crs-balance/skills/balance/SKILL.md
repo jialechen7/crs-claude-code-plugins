@@ -22,6 +22,7 @@ crs-balance $ARGUMENTS
 - `--interval <seconds>`：配合 `--watch` 设置刷新间隔，默认读取 `CRS_INTERVAL`，否则为 300 秒。
 - `--base-url <url>`：覆盖 CRS base URL。
 - `--account-id <id>` / `--account-name <name>` / `--account-filter <text>`：只展示指定账号。
+- `--account-names <name1,name2>`：只展示多个精确匹配的账号。
 - `--all`：忽略账号筛选，展示全部账号。
 
 ## 配置来源
@@ -34,6 +35,7 @@ crs-balance $ARGUMENTS
 - `CRS_INTERVAL`
 - `CRS_ACCOUNT_ID`
 - `CRS_ACCOUNT_NAME`
+- `CRS_ACCOUNT_NAMES`
 - `CRS_ACCOUNT_FILTER`
 
 凭据缺失时，不要猜测账号密码；直接提示用户在插件配置或环境变量中补齐。

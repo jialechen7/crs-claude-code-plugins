@@ -28,8 +28,10 @@ export CRS_BASE_URL=https://250924.xyz
 export CRS_ADMIN_USER=admin
 export CRS_ADMIN_PASS='your_password'
 
-# 三选一。推荐用精确账号名或账号 id，避免展示全部账号。
+# 按需选择。推荐用精确账号名或账号 id，避免展示全部账号。
 export CRS_ACCOUNT_NAME='your_account_name'
+# 多账号用逗号分隔：
+# export CRS_ACCOUNT_NAMES='account_a,account_b'
 # export CRS_ACCOUNT_ID='your_account_id'
 # export CRS_ACCOUNT_FILTER='name_or_id_fragment'
 ```
@@ -88,6 +90,7 @@ crs-balance [--json] [--watch] [--statusline] [--interval seconds] [--base-url u
 - `--json`：输出结构化 JSON。
 - `--watch`：按间隔循环刷新。
 - `--account-id <id>`：精确匹配账号 id。
-- `--account-name <name>`：精确匹配账号名。
+- `--account-name <name>`：精确匹配账号名，也支持逗号分隔的多个账号名。
+- `--account-names <name1,name2>`：精确匹配多个账号名。
 - `--account-filter <text>`：按账号 id 或名称片段匹配。
 - `--all`：展示全部账号。

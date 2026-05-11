@@ -527,9 +527,10 @@ function renderStatusline(snapshot, opts) {
   if (filtered.accounts.length === 0) {
     return "CRS 未匹配账号";
   }
+  const accountWidth = Math.max(...filtered.accounts.map((row) => row.account.length));
   const rows = filtered.accounts.map((row) => {
     const status = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
-    return `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour)} ${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay)}${status}`;
+    return `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account.padEnd(accountWidth), ANSI.dim)} ${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour)} ${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay)}${status}`;
   });
   return rows.join("\n");
 }

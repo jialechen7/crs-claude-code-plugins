@@ -1,7 +1,7 @@
 {
   "name": "crs-balance",
   "description": "查看 CRS 上游 Claude 账号 5h / 7d 使用量，并集成 Claude Code statusLine。",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "author": {
     "name": "base-stability-skills"
   },

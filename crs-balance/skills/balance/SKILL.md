@@ -12,36 +12,42 @@ allowed-tools: Bash(crs-balance) Bash(crs-balance *)
 crs-balance $ARGUMENTS
 ```
 
-如果用户没有传参数，直接运行 `crs-balance`，输出当前快照。
+如果用户没有传参数，直接运行 `crs-balance`，输出当前 token 对应账号的 5h / 7d / Opus 用量快照。
+
+## 工作原理
+
+`crs-balance` 直接调用公开只读接口 `https://250924.xyz/stats/key/<token>`，**无需 admin 凭据**。token 自动从 `~/.claude/settings.json` 的 `env.ANTHROPIC_AUTH_TOKEN` 读取，因此只要 Claude Code 已经配好 CRS key 就可以用。
+
+返回内容包括：
+- token 关联的账号名称、状态、是否可调度
+- 5h 窗口使用率 + 剩余 + reset 倒计时
+- 7d 窗口使用率 + 剩余 + reset 倒计时
+- 7d Opus 单独的使用率 + reset
+- 当前 key 在账号 5h / 7d 用量中的占比（mine）
 
 ## 支持的参数
 
-- `--json`：输出结构化 JSON，适合后续分析。
+- `--json`：输出结构化 JSON。
 - `--watch`：按间隔循环刷新。
+- `--interval <seconds>`：配合 `--watch` 设置刷新间隔，默认 60 秒。
 - `--statusline`：输出适合 Claude Code statusLine 的单行摘要。
-- `--interval <seconds>`：配合 `--watch` 设置刷新间隔，默认读取 `CRS_INTERVAL`，否则为 300 秒。
-- `--base-url <url>`：覆盖 CRS base URL。
-- `--account-id <id>` / `--account-name <name>` / `--account-filter <text>`：只展示指定账号。
-- `--account-names <name1,name2>`：只展示多个精确匹配的账号。
-- `--api-key-id <id>` / `--api-key-name <name>` / `--api-key <key>`：指定当前 CRS key，用于计算该 key 在专属账号 5h 窗口内的 token 消耗占比。
-- `--no-key-share`：关闭当前 key 占比展示。
-- `--all`：忽略账号筛选，展示全部账号。
+- `--base-url <url>`：覆盖默认 stats API 地址（仅自建 stats 实例时需要）。
+- `--token cr_xxx`：显式传 token，跳过自动读 settings.json。
+- `--cache-seconds N`：缓存秒数，默认 30。
+- `--no-color`：禁用颜色。
 
-## 配置来源
+## 环境变量
 
-配置读取顺序兼容以下来源；`~/.claude/crs-balance.env` 会由 `crs-balance` 自动读取，不需要用户写入 `~/.zshrc`：
+`~/.claude/crs-balance.env` 会被自动读取（不需要写入 `~/.zshrc`）：
 
-- `CRS_BASE_URL`
-- `CRS_ADMIN_USER`
-- `CRS_ADMIN_PASS`
-- `CRS_INTERVAL`
-- `CRS_ACCOUNT_ID`
-- `CRS_ACCOUNT_NAME`
-- `CRS_ACCOUNT_NAMES`
-- `CRS_ACCOUNT_FILTER`
-- `CRS_API_KEY_ID`
-- `CRS_API_KEY_NAME`
-- `CRS_API_KEY`
-- `CRS_KEY_SHARE`
+- `CRS_BASE_URL`（默认 https://250924.xyz）
+- `CRS_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN`
+- `CRS_CACHE_SECONDS`
+- `CRS_NO_COLOR`
+- `CRS_BAR_CELLS`（进度条宽度 5–40，默认按终端宽度自适应）
 
-凭据缺失时，不要猜测账号密码；直接提示用户在插件配置或环境变量中补齐。
+## 旧版本兼容性
+
+0.4.0 起，以下配置项已不再需要，存在也会被忽略：`CRS_ADMIN_USER` / `CRS_ADMIN_PASS` / `CRS_ACCOUNT_*` / `CRS_API_KEY_ID` / `CRS_API_KEY_NAME` / `--user` / `--password` / `--account-*` / `--api-key-*` / `--all` / `--no-key-share`。
+
+token 已唯一定位单个账号，不再需要账号筛选。

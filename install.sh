@@ -35,35 +35,36 @@ else
   claude plugin install "$PLUGIN_ID" --scope user >/dev/null
 fi
 
+# 0.4.0 起不再需要 admin 凭据。但保留检测旧 env 文件,提示迁移。
+deprecated_vars=()
+if [[ -f "$ENV_FILE" ]]; then
+  for v in CRS_ADMIN_USER CRS_ADMIN_PASS CRS_ACCOUNT_ID CRS_ACCOUNT_NAME CRS_ACCOUNT_NAMES CRS_ACCOUNT_FILTER CRS_API_KEY_ID CRS_API_KEY_NAME CRS_KEY_SHARE; do
+    if grep -qE "^[[:space:]]*(export[[:space:]]+)?$v=" "$ENV_FILE" 2>/dev/null; then
+      deprecated_vars+=("$v")
+    fi
+  done
+fi
+
 env_created=0
 if [[ ! -f "$ENV_FILE" ]]; then
   env_created=1
   echo "==> 创建配置模板: $ENV_FILE"
   cat > "$ENV_FILE" <<'ENV'
-# CRS balance 插件配置。填完后重启 Claude Code。
-export CRS_BASE_URL="https://250924.xyz"
-export CRS_ADMIN_USER="admin"
-export CRS_ADMIN_PASS="your_password"
+# CRS balance 插件配置 (0.4.0+, 不再需要 admin 凭据)
+# token 默认从 ~/.claude/settings.json 的 env.ANTHROPIC_AUTH_TOKEN 自动读取
+# 一般情况下本文件保持空白即可。
 
-# 按需选择。推荐用精确账号名或账号 id，避免展示全部账号。
-export CRS_ACCOUNT_NAME="your_account_name"
-# 多账号用逗号分隔：
-# export CRS_ACCOUNT_NAMES="account_a,account_b"
-# export CRS_ACCOUNT_ID="your_account_id"
-# export CRS_ACCOUNT_FILTER="name_or_id_fragment"
+# 仅当 stats API 自建实例时才覆盖:
+# export CRS_BASE_URL="https://250924.xyz"
 
-# 可选项
-export CRS_CACHE_SECONDS="300"
-# 当前 Claude Code 使用的 CRS key 会优先从 ~/.claude/settings.json 的 ANTHROPIC_AUTH_TOKEN 自动识别。
-# 如果自动识别失败，可以显式指定 key id 或 key 名称。
-# export CRS_API_KEY_ID="your_api_key_id"
-# export CRS_API_KEY_NAME="your_api_key_name"
-# export CRS_KEY_SHARE="0"
+# 仅当 settings.json 没有 ANTHROPIC_AUTH_TOKEN 时才显式指定:
+# export CRS_API_KEY="cr_xxx"
+
+# 可选:
+# export CRS_CACHE_SECONDS="30"
 # export CRS_NO_COLOR="1"
 ENV
   chmod 600 "$ENV_FILE"
-else
-  echo "==> 保留已有配置: $ENV_FILE"
 fi
 
 echo "==> 配置 Claude Code statusLine"
@@ -81,12 +82,15 @@ fi
 "$repair_bin"
 
 printf '\n安装完成。\n\n'
-if [[ "$env_created" == "1" ]]; then
-  printf '下一步：\n'
-  printf '1. 编辑 %s，填入 CRS_ADMIN_PASS 和账号筛选。\n' "$ENV_FILE"
-  printf '2. 重启 Claude Code。\n\n'
-else
-  printf '已保留现有配置: %s\n' "$ENV_FILE"
-  printf '重启 Claude Code 后生效。\n\n'
+if (( ${#deprecated_vars[@]} > 0 )); then
+  printf '⚠️  检测到 %s 里存在已废弃的旧配置项,可以删掉:\n' "$ENV_FILE"
+  for v in "${deprecated_vars[@]}"; do
+    printf '   - %s\n' "$v"
+  done
+  printf '   (留着不会报错,只是会被忽略)\n\n'
 fi
-printf '配置文件权限已设置为 600；不要把该文件提交到 git。\n'
+if [[ "$env_created" == "1" ]]; then
+  printf '已创建配置模板: %s\n' "$ENV_FILE"
+  printf '通常无需编辑;token 会自动从 ~/.claude/settings.json 读取。\n'
+fi
+printf '重启 Claude Code 后生效。\n'

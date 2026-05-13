@@ -1,7 +1,7 @@
 {
   "name": "crs-balance",
   "description": "查看 CRS 上游 Claude 账号 5h / 7d 使用量，并集成 Claude Code statusLine。",
-  "version": "0.3.6",
+  "version": "0.4.0",
   "author": {
     "name": "base-stability-skills"
   },
@@ -9,47 +9,10 @@
   "userConfig": {
     "base_url": {
       "type": "string",
-      "title": "CRS Base URL",
-      "description": "CRS admin API base URL，例如 https://250924.xyz。",
-      "required": true,
+      "title": "CRS stats base URL",
+      "description": "公开只读 stats API 地址，默认 https://250924.xyz。除非自建实例，否则保持默认。",
+      "required": false,
       "default": "https://250924.xyz"
-    },
-    "admin_user": {
-      "type": "string",
-      "title": "CRS admin username",
-      "description": "CRS admin 登录用户名。",
-      "required": true
-    },
-    "admin_pass": {
-      "type": "string",
-      "title": "CRS admin password",
-      "description": "CRS admin 登录密码。",
-      "required": true,
-      "sensitive": true
-    },
-    "account_filter": {
-      "type": "string",
-      "title": "CRS account filter",
-      "description": "只展示匹配该 id 或名称片段的 CRS 上游 Claude 账号；也可用环境变量 CRS_ACCOUNT_ID、CRS_ACCOUNT_NAME、CRS_ACCOUNT_NAMES 或 CRS_ACCOUNT_FILTER 覆盖。",
-      "required": false
-    },
-    "account_names": {
-      "type": "string",
-      "title": "CRS account names",
-      "description": "逗号分隔的精确账号名列表，例如 account_a,account_b。也可用 CRS_ACCOUNT_NAMES。",
-      "required": false
-    },
-    "api_key_id": {
-      "type": "string",
-      "title": "Current CRS API key id",
-      "description": "当前 Claude Code 使用的 CRS API Key ID，用于计算该 key 在专属账号 5h 窗口内的 token 占比。通常可自动从 ANTHROPIC_AUTH_TOKEN 识别。",
-      "required": false
-    },
-    "api_key_name": {
-      "type": "string",
-      "title": "Current CRS API key name",
-      "description": "当前 CRS API Key 名称。自动识别失败且不知道 key id 时可填写。",
-      "required": false
     }
   }
 }

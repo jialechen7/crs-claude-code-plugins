@@ -325,10 +325,10 @@ function usageColor(value) {
   return ANSI.teal;
 }
 
-const BAR_CELLS_MIN = 5;
+const BAR_CELLS_MIN = 3;
 const BAR_CELLS_MAX = 40;
-const BAR_CELLS_DEFAULT = 20;
-const STATUSLINE_NON_BAR_WIDTH = 80;
+const BAR_CELLS_DEFAULT = 8;
+const STATUSLINE_NON_BAR_WIDTH = 65;
 
 function resolveBarCells() {
   const explicit = Number(process.env.CRS_BAR_CELLS);
@@ -380,17 +380,15 @@ function isIdleWindow(window) {
   return window.usedPct !== null && window.usedPct !== undefined && window.usedPct <= 0;
 }
 
-const RESET_FIELD_WIDTH = 11;
-
 function windowStatus(label, window, mineEffectivePct) {
   const reset = compactReset(window.resetsAt);
-  let resetText = " ".repeat(RESET_FIELD_WIDTH);
+  let resetText = "";
   if (isIdleWindow(window) || reset === "idle") {
-    resetText = color("idle".padEnd(RESET_FIELD_WIDTH), ANSI.dim);
+    resetText = ` ${color("idle", ANSI.dim)}`;
   } else if (reset) {
-    resetText = color(`reset ${reset.padStart(5)}`.padEnd(RESET_FIELD_WIDTH), ANSI.dim);
+    resetText = ` ${color(reset, ANSI.dim)}`;
   }
-  return `${color(label, ANSI.dim)} ${compactUsageBar(window.usedPct, mineEffectivePct)} ${resetText}`;
+  return `${color(label, ANSI.dim)} ${compactUsageBar(window.usedPct, mineEffectivePct)}${resetText}`;
 }
 
 function mineEffectivePct(row, windowKey) {
@@ -402,80 +400,20 @@ function mineEffectivePct(row, windowKey) {
 
 function keyShareStatus(row, windowKey) {
   const share = row.keyShare && row.keyShare[windowKey];
-  if (!share) return "";
-  if (share.pct === null || share.pct === undefined) {
-    return ` ${color("·", ANSI.dim)} ${color("mine", ANSI.dim)} ${color("  n/a", ANSI.dim)}`;
-  }
+  if (!share || share.pct == null) return "";
   const absolute = mineEffectivePct(row, windowKey) || 0;
-  const pctText = `${absolute.toFixed(1)}%`.padStart(5);
-  return ` ${color("·", ANSI.dim)} ${color("mine", ANSI.dim)} ${color(pctText, ANSI.cyan)}`;
+  return ` ${color("·", ANSI.dim)} ${color("mine", ANSI.dim)} ${color(`${absolute.toFixed(1)}%`, ANSI.cyan)}`;
 }
 
-// statusLine 子进程通常拿不到 TTY columns,Claude Code 也不在 stdin JSON 里给宽度。
-// 用 COLUMNS / CRS_TERM_WIDTH 兜底;真没有就按 mode 决定。
-function detectTermWidth() {
-  if (process.stdout && Number.isFinite(process.stdout.columns) && process.stdout.columns > 0) {
-    return process.stdout.columns;
-  }
-  const fromEnv = Number(process.env.CRS_TERM_WIDTH || process.env.COLUMNS);
-  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 0;
-}
-
-function pickStatuslineMode() {
-  const explicit = (process.env.CRS_STATUSLINE_MODE || "").toLowerCase();
-  if (["full", "compact", "mini"].includes(explicit)) return explicit;
-  const w = detectTermWidth();
-  if (!w) return "compact"; // 未知宽度时默认紧凑,避免在窄窗口下消失
-  if (w >= 120) return "full";
-  if (w >= 60) return "compact";
-  return "mini";
-}
-
-function renderStatuslineFull(row) {
+function renderStatusline(snapshot) {
+  if (!snapshot.accounts.length) return "CRS 未匹配账号";
+  const row = snapshot.accounts[0];
   const statusTail = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
   return (
     `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ` +
     `${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour, mineEffectivePct(row, "fiveHour"))}${keyShareStatus(row, "fiveHour")} ` +
     `${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay, mineEffectivePct(row, "sevenDay"))}${keyShareStatus(row, "sevenDay")}${statusTail}`
   );
-}
-
-function renderStatuslineCompact(row) {
-  const five = row.windows.fiveHour;
-  const seven = row.windows.sevenDay;
-  const mine7 = mineEffectivePct(row, "sevenDay");
-  const five5 = compactReset(five.resetsAt);
-  const seven5 = compactReset(seven.resetsAt);
-  const statusTail = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
-  const pctSep = (label, pct, reset) =>
-    `${color(label, ANSI.dim)} ${color(compactPct(pct), usageColor(pct))}${reset ? ` ${color(reset, ANSI.dim)}` : ""}`;
-  return (
-    `${color("crs", ANSI.cyan)} ${color(row.account, ANSI.dim)} ` +
-    `${color("·", ANSI.dim)} ${pctSep("5h", five.usedPct, five5)} ` +
-    `${color("·", ANSI.dim)} ${pctSep("7d", seven.usedPct, seven5)}` +
-    (mine7 != null ? ` ${color("·", ANSI.dim)} ${color("mine", ANSI.dim)} ${color(`${mine7.toFixed(1)}%`, ANSI.cyan)}` : "") +
-    statusTail
-  );
-}
-
-function renderStatuslineMini(row) {
-  const five = row.windows.fiveHour;
-  const seven = row.windows.sevenDay;
-  const acc = row.account.length > 10 ? row.account.slice(0, 9) + "…" : row.account;
-  return (
-    `${color("crs", ANSI.cyan)} ${color(acc, ANSI.dim)} ` +
-    `${color("5h", ANSI.dim)}${color(compactPct(five.usedPct), usageColor(five.usedPct))} ` +
-    `${color("7d", ANSI.dim)}${color(compactPct(seven.usedPct), usageColor(seven.usedPct))}`
-  );
-}
-
-function renderStatusline(snapshot) {
-  if (!snapshot.accounts.length) return "CRS 未匹配账号";
-  const row = snapshot.accounts[0];
-  const mode = pickStatuslineMode();
-  if (mode === "full") return renderStatuslineFull(row);
-  if (mode === "mini") return renderStatuslineMini(row);
-  return renderStatuslineCompact(row);
 }
 
 function pct(value) {

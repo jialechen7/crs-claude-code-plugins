@@ -386,7 +386,7 @@ function windowStatus(label, window, mineEffectivePct) {
   if (isIdleWindow(window) || reset === "idle") {
     resetText = ` ${color("idle", ANSI.dim)}`;
   } else if (reset) {
-    resetText = ` ${color(reset, ANSI.dim)}`;
+    resetText = ` ${color(`↻ ${reset}`, ANSI.dim)}`;
   }
   return `${color(label, ANSI.dim)} ${compactUsageBar(window.usedPct, mineEffectivePct)}${resetText}`;
 }

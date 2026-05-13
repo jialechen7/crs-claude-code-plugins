@@ -83,11 +83,32 @@ fi
 
 printf '\n安装完成。\n\n'
 if (( ${#deprecated_vars[@]} > 0 )); then
-  printf '⚠️  检测到 %s 里存在已废弃的旧配置项,可以删掉:\n' "$ENV_FILE"
+  printf '⚠️  检测到 %s 里存在已废弃的旧配置项:\n' "$ENV_FILE"
   for v in "${deprecated_vars[@]}"; do
     printf '   - %s\n' "$v"
   done
-  printf '   (留着不会报错,只是会被忽略)\n\n'
+
+  ans=""
+  if [[ -n "${CRS_AUTO_CLEAN_DEPRECATED:-}" ]]; then
+    ans="$CRS_AUTO_CLEAN_DEPRECATED"
+  elif [[ -r /dev/tty ]]; then
+    # 支持 curl ... | bash:从 /dev/tty 读,绕过被 pipe 占用的 stdin
+    printf '\n是否自动删除这些行? (会先备份原文件) [y/N] '
+    read -r ans </dev/tty || ans=""
+  fi
+
+  if [[ "$ans" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+    backup="$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$ENV_FILE" "$backup"
+    for v in "${deprecated_vars[@]}"; do
+      # macOS / Linux 通用:用 .tmp 后缀让 sed -i 兼容两端
+      sed -i.tmp -E "/^[[:space:]]*(export[[:space:]]+)?${v}=/d" "$ENV_FILE"
+      rm -f "$ENV_FILE.tmp"
+    done
+    printf '✓ 已删除,备份保存到: %s\n\n' "$backup"
+  else
+    printf '   (留着不会报错,只是会被忽略;后续也可以重跑本脚本来清理)\n\n'
+  fi
 fi
 if [[ "$env_created" == "1" ]]; then
   printf '已创建配置模板: %s\n' "$ENV_FILE"

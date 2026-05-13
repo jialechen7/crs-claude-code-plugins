@@ -45,6 +45,8 @@ crs-balance $ARGUMENTS
 - `CRS_CACHE_SECONDS`
 - `CRS_NO_COLOR`
 - `CRS_BAR_CELLS`（进度条宽度 5–40，默认按终端宽度自适应）
+- `CRS_STATUSLINE_MODE`（`full` / `compact` / `mini`，默认按窗口宽度自适应；窗口未知或较窄时落到 `compact`，确保 statusLine 不被截断）
+- `CRS_TERM_WIDTH`（手动告诉脚本终端列数，绕过 Claude Code 子进程拿不到 columns 的限制）
 
 ## 旧版本兼容性
 

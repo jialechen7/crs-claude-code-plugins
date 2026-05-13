@@ -93,19 +93,17 @@ if (( ${#deprecated_vars[@]} > 0 )); then
     ans="$CRS_AUTO_CLEAN_DEPRECATED"
   elif [[ -r /dev/tty ]]; then
     # 支持 curl ... | bash:从 /dev/tty 读,绕过被 pipe 占用的 stdin
-    printf '\n是否自动删除这些行? (会先备份原文件) [y/N] '
+    printf '\n是否自动删除这些行? [y/N] '
     read -r ans </dev/tty || ans=""
   fi
 
   if [[ "$ans" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-    backup="$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$ENV_FILE" "$backup"
     for v in "${deprecated_vars[@]}"; do
       # macOS / Linux 通用:用 .tmp 后缀让 sed -i 兼容两端
       sed -i.tmp -E "/^[[:space:]]*(export[[:space:]]+)?${v}=/d" "$ENV_FILE"
       rm -f "$ENV_FILE.tmp"
     done
-    printf '✓ 已删除,备份保存到: %s\n\n' "$backup"
+    printf '✓ 已删除\n\n'
   else
     printf '   (留着不会报错,只是会被忽略;后续也可以重跑本脚本来清理)\n\n'
   fi

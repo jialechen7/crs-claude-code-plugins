@@ -314,8 +314,8 @@ function color(text, code) {
 }
 
 function compactPct(value) {
-  if (value === null || value === undefined) return "  -";
-  return `${Math.max(0, value).toFixed(0)}%`.padStart(4);
+  if (value === null || value === undefined) return "   -";
+  return `${Math.max(0, value).toFixed(1)}%`.padStart(6);
 }
 
 function usageColor(value) {

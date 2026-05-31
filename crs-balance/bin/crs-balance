@@ -134,7 +134,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`crs-balance — 查 CRS 上游 Claude 账号 5h / 7d / Opus 使用量
+  console.log(`crs-balance — 查上游 Claude 账号 5h / 7d / Opus 使用量 (支持 CRS 与 crs2/sub2api)
 
 用法:
   crs-balance [--statusline | --json | --watch [--interval N]]
@@ -145,7 +145,7 @@ function printHelp() {
   --watch            循环刷新 (interval 秒)
   --interval N       刷新间隔 (默认 60s)
   --base-url URL     覆盖默认 ${DEFAULT_BASE_URL}
-  --token cr_xxx     显式提供 API key token (默认读 ANTHROPIC_AUTH_TOKEN)
+  --token TOKEN      显式提供 API key token (默认读 ANTHROPIC_AUTH_TOKEN)
   --cache-seconds N  缓存秒数 (默认 ${DEFAULT_CACHE_SECONDS})
   --no-color         禁用颜色
 
@@ -153,19 +153,31 @@ function printHelp() {
   CRS_BASE_URL, CRS_API_KEY, ANTHROPIC_AUTH_TOKEN,
   CRS_CACHE_SECONDS, CRS_NO_COLOR, CRS_BAR_CELLS
 
-数据源: 公开只读 API ${DEFAULT_BASE_URL}/stats/key/<token>
-无需 admin 凭据。`);
+数据源 (按 token 前缀自动选择):
+  cr_xxx → ${DEFAULT_BASE_URL}/stats/key/<token>        (CRS)
+  sk-xxx → ${DEFAULT_BASE_URL}/stats/crs2/key/<token>   (crs2 / sub2api)
+均为公开只读 API,无需 admin 凭据。`);
 }
 
 // ── HTTP ────────────────────────────────────────────────────────────────────
 
+// Pick the backend by token prefix: cr_ → crs (Redis), sk- → crs2 (sub2api).
+// Both expose the same /key report shape, only the path differs.
+function resolveBackend(token) {
+  if (typeof token === "string" && token.startsWith("sk-")) {
+    return { name: "crs2", path: "/stats/crs2/key/" };
+  }
+  return { name: "crs", path: "/stats/key/" };
+}
+
 async function fetchKeyReport(opts) {
   if (!opts.token) {
-    const err = new Error("缺少 token: 请确保 ~/.claude/settings.json 的 env.ANTHROPIC_AUTH_TOKEN 已设置,或显式传 --token cr_xxx");
+    const err = new Error("缺少 token: 请确保 ~/.claude/settings.json 的 env.ANTHROPIC_AUTH_TOKEN 已设置,或显式传 --token cr_xxx / sk-xxx");
     err.missingToken = true;
     throw err;
   }
-  const url = `${opts.baseUrl.replace(/\/$/, "")}/stats/key/${encodeURIComponent(opts.token)}`;
+  const backend = resolveBackend(opts.token);
+  const url = `${opts.baseUrl.replace(/\/$/, "")}${backend.path}${encodeURIComponent(opts.token)}`;
   let res;
   try {
     res = await fetch(url, { method: "GET" });
@@ -185,7 +197,7 @@ async function fetchKeyReport(opts) {
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error("stats API 返回空数组");
   }
-  return data[0];
+  return { report: data[0], backend: backend.name };
 }
 
 // ── snapshot building ───────────────────────────────────────────────────────
@@ -208,7 +220,7 @@ function pctOrNull(n) {
   return Number.isFinite(v) ? v : null;
 }
 
-function buildSnapshot(report) {
+function buildSnapshot(report, backend) {
   const acc = report.account || {};
   const used5h = pctOrNull(acc.fiveHour && acc.fiveHour.utilization);
   const used7d = pctOrNull(acc.sevenDay && acc.sevenDay.utilization);
@@ -220,6 +232,7 @@ function buildSnapshot(report) {
 
   return {
     generatedAt: new Date().toISOString(),
+    backend: backend || "crs",
     key: report.key,
     accounts: [
       {
@@ -410,7 +423,7 @@ function renderStatusline(snapshot) {
   const row = snapshot.accounts[0];
   const statusTail = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
   return (
-    `${color("crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ` +
+    `${color(snapshot.backend || "crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ` +
     `${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour, mineEffectivePct(row, "fiveHour"))}${keyShareStatus(row, "fiveHour")} ` +
     `${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay, mineEffectivePct(row, "sevenDay"))}${keyShareStatus(row, "sevenDay")}${statusTail}`
   );
@@ -468,8 +481,8 @@ function renderTable(snapshot) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchOnce(opts) {
-  const report = await fetchKeyReport(opts);
-  return buildSnapshot(report);
+  const { report, backend } = await fetchKeyReport(opts);
+  return buildSnapshot(report, backend);
 }
 
 async function main() {
@@ -500,7 +513,7 @@ async function main() {
     if (opts.json) {
       console.log(JSON.stringify(snapshot, null, 2));
     } else {
-      console.log(`[${new Date(snapshot.generatedAt).toLocaleString()}] CRS Claude 余额快照`);
+      console.log(`[${new Date(snapshot.generatedAt).toLocaleString()}] ${(snapshot.backend || "crs").toUpperCase()} Claude 余额快照`);
       console.log(`key: ${snapshot.key.name} (token → account ${snapshot.accounts[0].account})`);
       console.log(renderTable(snapshot));
     }

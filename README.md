@@ -2,11 +2,20 @@
 
 Claude Code 插件 marketplace，目前包含：
 
-- `crs-balance`：查看 CRS 上游 Claude 账号 5h / 7d 使用量，并可集成到 Claude Code statusLine。
+- `crs-balance`：查看上游 Claude 账号 5h / 7d 使用量（支持 CRS 与 crs2/sub2api），并可集成到 Claude Code statusLine。
+
+## 0.5.0 重要变更
+
+从 0.5.0 起，插件**同时支持 CRS 与 crs2 (sub2api)**，按 token 前缀自动识别后端：
+
+- `cr_xxx` → `https://250924.xyz/stats/key/<token>`（CRS）
+- `sk-xxx` → `https://250924.xyz/stats/crs2/key/<token>`（crs2 / sub2api）
+
+两者返回结构一致、状态栏渲染相同，首词标明 `crs` / `crs2`。无需额外配置。
 
 ## 0.4.0 重要变更
 
-从 0.4.0 起，**插件不再需要 CRS admin 账号密码**。token（你已配在 Claude Code 里的 `cr_xxx`）即唯一凭据：插件读 `~/.claude/settings.json` 里的 `env.ANTHROPIC_AUTH_TOKEN`，调用公开只读接口 `https://250924.xyz/stats/key/<token>` 拿 token 关联账号的 5h / 7d 用量。
+从 0.4.0 起，**插件不再需要 CRS admin 账号密码**。token（你已配在 Claude Code 里的 `cr_xxx` 或 `sk-xxx`）即唯一凭据：插件读 `~/.claude/settings.json` 里的 `env.ANTHROPIC_AUTH_TOKEN`，调用公开只读接口拿 token 关联账号的 5h / 7d 用量。
 
 > 数据完全限定在你自己的 token 关联的账号范围内，无法看到别人账号。
 

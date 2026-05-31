@@ -1,17 +1,17 @@
 {
   "name": "crs-balance",
-  "description": "查看 CRS 上游 Claude 账号 5h / 7d 使用量，并集成 Claude Code statusLine。",
-  "version": "0.4.4",
+  "description": "查看上游 Claude 账号 5h / 7d 使用量（支持 CRS 与 crs2/sub2api，按 token 前缀自动识别），并集成 Claude Code statusLine。",
+  "version": "0.5.0",
   "author": {
     "name": "jialechen7",
     "email": "chenjiale0303@gmail.com",
     "url": "https://github.com/jialechen7"
   },
-  "keywords": ["crs", "claude", "balance", "usage", "statusline"],
+  "keywords": ["crs", "crs2", "sub2api", "claude", "balance", "usage", "statusline"],
   "userConfig": {
     "base_url": {
       "type": "string",
-      "title": "CRS stats base URL",
+      "title": "stats base URL",
       "description": "公开只读 stats API 地址，默认 https://250924.xyz。除非自建实例，否则保持默认。",
       "required": false,
       "default": "https://250924.xyz"

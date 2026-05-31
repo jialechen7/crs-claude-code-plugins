@@ -1,12 +1,12 @@
 ---
 name: balance
-description: 查看 CRS 上游 Claude 账号的 5h、7d、7d Opus 使用率、剩余额度、reset 时间和调度状态。适用于用户询问 CRS 余额、Claude 账号余额、上游账号用量、quota 或 utilization。
+description: 查看上游 Claude 账号的 5h、7d、7d Opus 使用率、剩余额度、reset 时间和调度状态，支持 CRS 与 crs2/sub2api（按 token 前缀自动识别）。适用于用户询问 CRS / crs2 余额、Claude 账号余额、上游账号用量、quota 或 utilization。
 allowed-tools: Bash(crs-balance) Bash(crs-balance *)
 ---
 
 # CRS Balance
 
-当用户要求查看 CRS / Claude 上游账号余额或用量时，运行：
+当用户要求查看 CRS / crs2 / Claude 上游账号余额或用量时，运行：
 
 ```bash
 crs-balance $ARGUMENTS
@@ -16,7 +16,12 @@ crs-balance $ARGUMENTS
 
 ## 工作原理
 
-`crs-balance` 直接调用公开只读接口 `https://250924.xyz/stats/key/<token>`，**无需 admin 凭据**。token 自动从 `~/.claude/settings.json` 的 `env.ANTHROPIC_AUTH_TOKEN` 读取，因此只要 Claude Code 已经配好 CRS key 就可以用。
+`crs-balance` 调用公开只读 stats API，**无需 admin 凭据**。token 自动从 `~/.claude/settings.json` 的 `env.ANTHROPIC_AUTH_TOKEN` 读取，并按前缀自动选择后端：
+
+- `cr_xxx` → `https://250924.xyz/stats/key/<token>`（CRS，Redis）
+- `sk-xxx` → `https://250924.xyz/stats/crs2/key/<token>`（crs2 / sub2api，Postgres）
+
+两个后端返回结构一致，输出与状态栏渲染完全相同，只是状态栏首词会标明 `crs` 或 `crs2`。只要 Claude Code 已经配好 key 就可以用。
 
 返回内容包括：
 - token 关联的账号名称、状态、是否可调度
@@ -32,7 +37,7 @@ crs-balance $ARGUMENTS
 - `--interval <seconds>`：配合 `--watch` 设置刷新间隔，默认 60 秒。
 - `--statusline`：输出适合 Claude Code statusLine 的单行摘要。
 - `--base-url <url>`：覆盖默认 stats API 地址（仅自建 stats 实例时需要）。
-- `--token cr_xxx`：显式传 token，跳过自动读 settings.json。
+- `--token <cr_xxx | sk-xxx>`：显式传 token，跳过自动读 settings.json（前缀决定后端）。
 - `--cache-seconds N`：缓存秒数，默认 30。
 - `--no-color`：禁用颜色。
 

@@ -1,6 +1,13 @@
 # crs-balance
 
-Claude Code 插件，用于查看 CRS 上游 Claude 账号的 5h / 7d 使用量，并可集成到 Claude Code statusLine。
+Claude Code 插件，用于查看上游 Claude 账号的 5h / 7d 使用量，并可集成到 Claude Code statusLine。
+
+支持两个后端，按 `~/.claude/settings.json` 里 `ANTHROPIC_AUTH_TOKEN` 的前缀自动识别：
+
+- `cr_xxx` → CRS（`/stats/key/<token>`）
+- `sk-xxx` → crs2 / sub2api（`/stats/crs2/key/<token>`）
+
+两者返回结构一致，状态栏渲染相同，首词标明 `crs` / `crs2`。
 
 ## 安装
 
@@ -74,7 +81,8 @@ export CRS_NO_COLOR=1
 示例：
 
 ```text
-crs › bob-opus · 5h ▓░░░░░░░░░ 12% reset 1.6h · 7d ▓▓▓▓▓▓▓░░░ 68% reset 1.3d
+crs  › bob-opus · 5h ▓░░░░░░░░░ 12% reset 1.6h · 7d ▓▓▓▓▓▓▓░░░ 68% reset 1.3d
+crs2 › Max2     · 5h ▓░░░░░░░  3.0% ↻ 4.1h · mine 2.2% · 7d █░░░░░░░ 14.0% ↻ 3.5d · mine 10.3%
 ```
 
 如果能识别当前 CRS API Key，statusLine 会在 5h 后显示 `my share xx%`，表示当前使用者的 key 在该专属账号当前 5h 窗口内的 token 消耗占整个账号所有 key 消耗的比例。窗口范围使用账号的 `fiveHour.resetsAt - 5h` 到 `fiveHour.resetsAt`，与账号刷新窗口对齐。

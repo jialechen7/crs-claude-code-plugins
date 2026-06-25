@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Claude Code plugins for CRS / crs2 (sub2api) aggregate account monitoring.",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "plugins": [
     {
       "name": "crs-balance",
       "source": "./crs-balance",
       "description": "查看上游 Claude 账号聚合 5h / 7d 使用量（支持 CRS 与 crs2/sub2api），并集成 Claude Code statusLine。",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "category": "monitoring",
       "tags": ["crs", "crs2", "sub2api", "claude", "balance", "usage", "statusline"]
     }

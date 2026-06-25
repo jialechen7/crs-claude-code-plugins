@@ -246,7 +246,12 @@ function pctOrNull(n) {
 
 function sameText(a, b) {
   if (a === null || a === undefined || b === null || b === undefined) return false;
-  return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  return normalizeKeyName(a) === normalizeKeyName(b);
+}
+
+function normalizeKeyName(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim().toLowerCase();
 }
 
 function aggregateWindowTotals(aggregate, key) {
@@ -264,6 +269,21 @@ function aggregateResetAt(total) {
 function aggregateSharePct(total, report, backend) {
   if (!total || !Array.isArray(total.keys)) return null;
   const key = report.key || {};
+  const namesForKey = (candidate) => {
+    const names = new Set();
+    const add = (value) => {
+      const normalized = normalizeKeyName(value);
+      if (normalized) names.add(normalized);
+    };
+    add(candidate && candidate.name);
+    if (candidate && Array.isArray(candidate.aliases)) {
+      for (const alias of candidate.aliases) add(alias);
+    }
+    if (candidate && Array.isArray(candidate.sources)) {
+      for (const source of candidate.sources) add(source && source.keyName);
+    }
+    return names;
+  };
   const matchesCurrentSource = (source) => {
     if (!source || source.backend !== backend) return false;
     if (key.id != null && sameText(source.keyId, key.id)) return true;
@@ -278,7 +298,24 @@ function aggregateSharePct(total, report, backend) {
     if (key.name != null && sameText(candidate.name, key.name)) return true;
     return Array.isArray(candidate.aliases) && candidate.aliases.some((alias) => sameText(alias, key.name));
   });
-  return matched && matched.shareOfAccount != null ? pctOrNull(matched.shareOfAccount * 100) : null;
+  if (!matched || matched.shareOfAccount == null) return null;
+
+  // The aggregate API normally groups same-person keys into aliases. Keep a
+  // client-side guard as well so case-only duplicates from CRS/crs2 are added
+  // together if the API ever returns them as separate rows.
+  const matchedNames = namesForKey(matched);
+  let share = 0;
+  let sawMatch = false;
+  for (const candidate of total.keys) {
+    const candidateShare = pctOrNull(candidate && candidate.shareOfAccount);
+    if (candidateShare == null) continue;
+    const candidateNames = namesForKey(candidate);
+    const overlaps = [...matchedNames].some((name) => candidateNames.has(name));
+    if (!overlaps) continue;
+    share += candidateShare;
+    sawMatch = true;
+  }
+  return pctOrNull((sawMatch ? share : matched.shareOfAccount) * 100);
 }
 
 function buildSnapshot(report, backend, aggregate) {

@@ -8,7 +8,7 @@ const crypto = require("crypto");
 
 const DEFAULT_BASE_URL = "https://250924.xyz";
 const DEFAULT_CACHE_SECONDS = 30;
-const CACHE_SCHEMA = 3;
+const CACHE_SCHEMA = 4;
 
 // ── env helpers ─────────────────────────────────────────────────────────────
 
@@ -153,9 +153,10 @@ function printHelp() {
   CRS_BASE_URL, CRS_API_KEY, ANTHROPIC_AUTH_TOKEN,
   CRS_CACHE_SECONDS, CRS_NO_COLOR, CRS_BAR_CELLS
 
-数据源 (按 token 前缀自动选择):
+数据源:
   cr_xxx → ${DEFAULT_BASE_URL}/stats/key/<token>        (CRS)
   sk-xxx → ${DEFAULT_BASE_URL}/stats/crs2/key/<token>   (crs2 / sub2api)
+  账号用量与 mine 占比 → ${DEFAULT_BASE_URL}/stats/aggregate/account/<account>
 均为公开只读 API,无需 admin 凭据。`);
 }
 
@@ -200,6 +201,29 @@ async function fetchKeyReport(opts) {
   return { report: data[0], backend: backend.name };
 }
 
+async function fetchAggregateAccountReport(opts, accountName) {
+  if (!accountName) {
+    throw new Error("token report 未返回账号名,无法查询 aggregate account stats");
+  }
+  const url = `${opts.baseUrl.replace(/\/$/, "")}/stats/aggregate/account/${encodeURIComponent(accountName)}`;
+  let res;
+  try {
+    res = await fetch(url, { method: "GET" });
+  } catch (e) {
+    throw new Error(`aggregate request failed: ${e.message}`);
+  }
+  if (res.status === 404) {
+    const err = new Error(`aggregate account 无法识别: ${accountName}`);
+    err.status = 404;
+    throw err;
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`aggregate HTTP ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
 // ── snapshot building ───────────────────────────────────────────────────────
 
 function statusTags(account) {
@@ -220,35 +244,87 @@ function pctOrNull(n) {
   return Number.isFinite(v) ? v : null;
 }
 
-function buildSnapshot(report, backend) {
+function sameText(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+}
+
+function aggregateWindowTotals(aggregate, key) {
+  return aggregate && aggregate.totals && aggregate.totals[key] ? aggregate.totals[key] : null;
+}
+
+function aggregateResetAt(total) {
+  return (
+    (total && total.utilizationSource && total.utilizationSource.resetsAt) ||
+    (total && total.sourceTotals && total.sourceTotals[0] && total.sourceTotals[0].resetsAt) ||
+    null
+  );
+}
+
+function aggregateSharePct(total, report, backend) {
+  if (!total || !Array.isArray(total.keys)) return null;
+  const key = report.key || {};
+  const matchesCurrentSource = (source) => {
+    if (!source || source.backend !== backend) return false;
+    if (key.id != null && sameText(source.keyId, key.id)) return true;
+    if (key.name != null && sameText(source.keyName, key.name)) return true;
+    return false;
+  };
+
+  const bySource = total.keys.find((candidate) =>
+    Array.isArray(candidate.sources) && candidate.sources.some(matchesCurrentSource)
+  );
+  const matched = bySource || total.keys.find((candidate) => {
+    if (key.name != null && sameText(candidate.name, key.name)) return true;
+    return Array.isArray(candidate.aliases) && candidate.aliases.some((alias) => sameText(alias, key.name));
+  });
+  return matched && matched.shareOfAccount != null ? pctOrNull(matched.shareOfAccount * 100) : null;
+}
+
+function buildSnapshot(report, backend, aggregate) {
   const acc = report.account || {};
-  const used5h = pctOrNull(acc.fiveHour && acc.fiveHour.utilization);
-  const used7d = pctOrNull(acc.sevenDay && acc.sevenDay.utilization);
+  const aggregateAccount = aggregate && aggregate.account ? aggregate.account : {};
+  const aggregate5h = aggregateWindowTotals(aggregate, "fiveHour");
+  const aggregate7d = aggregateWindowTotals(aggregate, "sevenDay");
+  const used5h = pctOrNull(
+    aggregate5h && aggregate5h.accountUtilization != null
+      ? aggregate5h.accountUtilization
+      : acc.fiveHour && acc.fiveHour.utilization
+  );
+  const used7d = pctOrNull(
+    aggregate7d && aggregate7d.accountUtilization != null
+      ? aggregate7d.accountUtilization
+      : acc.sevenDay && acc.sevenDay.utilization
+  );
   const usedOpus = pctOrNull(acc.sevenDay && acc.sevenDay.opusUtilization);
 
   const remaining = (u) => (u === null ? null : Math.max(0, 100 - u));
   const sharePct = (w) =>
     w && w.shareOfAccount != null ? pctOrNull(w.shareOfAccount * 100) : null;
+  const share5h = aggregateSharePct(aggregate5h, report, backend);
+  const share7d = aggregateSharePct(aggregate7d, report, backend);
 
   return {
     generatedAt: new Date().toISOString(),
     backend: backend || "crs",
     key: report.key,
+    source: aggregate ? "aggregate" : "key",
     accounts: [
       {
         accountId: acc.id || null,
-        account: acc.name || "(unknown)",
+        account: aggregateAccount.name || acc.name || "(unknown)",
         status: statusTags(acc),
+        sourceAccounts: aggregateAccount.sourceAccounts || null,
         windows: {
           fiveHour: {
             usedPct: used5h,
             remainingPct: remaining(used5h),
-            resetsAt: acc.fiveHour && acc.fiveHour.resetsAt
+            resetsAt: aggregateResetAt(aggregate5h) || (acc.fiveHour && acc.fiveHour.resetsAt)
           },
           sevenDay: {
             usedPct: used7d,
             remainingPct: remaining(used7d),
-            resetsAt: acc.sevenDay && acc.sevenDay.resetsAt
+            resetsAt: aggregateResetAt(aggregate7d) || (acc.sevenDay && acc.sevenDay.resetsAt)
           },
           sevenDayOpus: {
             usedPct: usedOpus,
@@ -257,8 +333,8 @@ function buildSnapshot(report, backend) {
           }
         },
         keyShare: {
-          fiveHour: { pct: sharePct(report.fiveHour) },
-          sevenDay: { pct: sharePct(report.sevenDay) }
+          fiveHour: { pct: share5h != null ? share5h : sharePct(report.fiveHour) },
+          sevenDay: { pct: share7d != null ? share7d : sharePct(report.sevenDay) }
         }
       }
     ]
@@ -482,7 +558,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchOnce(opts) {
   const { report, backend } = await fetchKeyReport(opts);
-  return buildSnapshot(report, backend);
+  const accountName = report && report.account && report.account.name;
+  const aggregate = await fetchAggregateAccountReport(opts, accountName);
+  return buildSnapshot(report, backend, aggregate);
 }
 
 async function main() {

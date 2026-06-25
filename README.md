@@ -4,6 +4,14 @@ Claude Code 插件 marketplace，目前包含：
 
 - `crs-balance`：查看上游 Claude 账号 5h / 7d 使用量（支持 CRS 与 crs2/sub2api），并可集成到 Claude Code statusLine。
 
+## 0.6.0 重要变更
+
+从 0.6.0 起，插件会先用当前 token 识别账号，再查询账号聚合接口：
+
+- `https://250924.xyz/stats/aggregate/account/<account>`
+
+当同一个账号同时挂在 CRS 与 crs2/sub2api 两个平台下时，两个平台的 key 都会按聚合后的账号总用量计算 `mine` 占比，不再只看当前 token 所在后端的局部用量。
+
 ## 0.5.0 重要变更
 
 从 0.5.0 起，插件**同时支持 CRS 与 crs2 (sub2api)**，按 token 前缀自动识别后端：
@@ -11,7 +19,7 @@ Claude Code 插件 marketplace，目前包含：
 - `cr_xxx` → `https://250924.xyz/stats/key/<token>`（CRS）
 - `sk-xxx` → `https://250924.xyz/stats/crs2/key/<token>`（crs2 / sub2api）
 
-两者返回结构一致、状态栏渲染相同，首词标明 `crs` / `crs2`。无需额外配置。
+两者用于识别 token 归属账号，状态栏首词标明 `crs` / `crs2`。无需额外配置。
 
 ## 0.4.0 重要变更
 

@@ -16,12 +16,12 @@ crs-balance $ARGUMENTS
 
 ## 工作原理
 
-`crs-balance` 调用公开只读 stats API，**无需 admin 凭据**。token 自动从 `~/.claude/settings.json` 的 `env.ANTHROPIC_AUTH_TOKEN` 读取，并按前缀自动选择后端：
+`crs-balance` 调用公开只读 stats API，**无需 admin 凭据**。token 自动从 `~/.claude/settings.json` 的 `env.ANTHROPIC_AUTH_TOKEN` 读取，并按前缀自动选择后端来识别 token 归属账号：
 
 - `cr_xxx` → `https://250924.xyz/stats/key/<token>`（CRS，Redis）
 - `sk-xxx` → `https://250924.xyz/stats/crs2/key/<token>`（crs2 / sub2api，Postgres）
 
-两个后端返回结构一致，输出与状态栏渲染完全相同，只是状态栏首词会标明 `crs` 或 `crs2`。只要 Claude Code 已经配好 key 就可以用。
+识别账号后会查询 `https://250924.xyz/stats/aggregate/account/<account>` 获取账号聚合用量。输出与状态栏首词仍会标明当前 token 来自 `crs` 或 `crs2`。同一个账号同时挂在两个平台下时，`mine` 占比按聚合后的账号总用量计算。
 
 返回内容包括：
 - token 关联的账号名称、状态、是否可调度

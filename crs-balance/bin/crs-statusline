@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -u
 
+# 防重入护栏：同一次 statusLine 渲染中，若 CRS 被再次进入（例如上游 wrapper 回调本脚本，
+# 形成 flux <-> crs 之类的环），直接空退出打断递归，杜绝状态栏因无限递归而卡死/空白。
+# 正常单次链路（settings -> ... -> crs -> 上游/claude-hud）不会触发此护栏。
+if [[ -n "${CRS_STATUSLINE_GUARD:-}" ]]; then
+  exit 0
+fi
+export CRS_STATUSLINE_GUARD=1
+
 input="$(cat)"
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

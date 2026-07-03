@@ -50,11 +50,43 @@ const existing =
   data.statusLine && typeof data.statusLine.command === "string"
     ? data.statusLine.command.trim()
     : "";
-const isCrsCommand =
-  existing === wrapper ||
-  /(^|[/"'\s])crs-statusline(\.sh)?([/"'\s]|$)/.test(existing);
+const crsRef = /(^|[/"'\s])crs-statusline(\.sh)?([/"'\s]|$)/;
+const isCrsCommand = existing === wrapper || crsRef.test(existing);
+
+// 检测候选上游命令是否本身就会回调 CRS（例如 flux-statusline 把 _original_command
+// 指回 crs-statusline.sh）。若是，把它存成上游会造成 crs <-> 该命令 的死循环，
+// 导致 statusLine 无限递归、状态栏空白。此时不接管、也不保存上游。
+function chainsBackToCrs(cmd) {
+  if (!cmd || crsRef.test(cmd)) return false; // 空 / 本身就是 crs，无需判定
+  const firstTok = cmd.split(/\s+/)[0].replace(/^['"]|['"]$/g, "");
+  try {
+    if (fs.existsSync(firstTok) && fs.statSync(firstTok).isFile()) {
+      return crsRef.test(fs.readFileSync(firstTok, "utf8"));
+    }
+  } catch (e) {
+    /* 读不到就当作不回调 */
+  }
+  return false;
+}
 
 if (existing && !isCrsCommand) {
+  if (chainsBackToCrs(existing)) {
+    // 当前 statusLine 已经会调用 CRS：保留它为外层入口，不抢占 settings。
+    // 清空 upstream，交由 CRS 主程序兜底渲染 claude-hud —— 全程无环。
+    try {
+      if (fs.existsSync(upstreamFile) && fs.readFileSync(upstreamFile, "utf8").trim() !== "") {
+        fs.writeFileSync(upstreamFile, "");
+      }
+    } catch (e) {
+      /* upstream 可能被用户锁定（chflags），忽略即可 */
+    }
+    console.log(
+      `检测到当前 statusLine (${existing}) 已链向 CRS；为避免死循环，保留其为外层入口、未接管 statusLine。`
+    );
+    console.log("CRS 余额与 claude-hud 仍会正常显示。");
+    process.exit(0);
+  }
+
   const previous = fs.existsSync(upstreamFile)
     ? fs.readFileSync(upstreamFile, "utf8").trim()
     : "";

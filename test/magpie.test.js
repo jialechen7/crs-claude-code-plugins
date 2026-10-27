@@ -47,7 +47,7 @@ test('existing CRS token and aggregate behavior remain compatible', async () => 
   }
 })
 
-test('Magpie statusline reads Claude API key, uses bearer header, and labels estimate', async () => {
+test('Magpie statusline preserves original layout and uses bearer authentication', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'magpie-plugin-'))
   const config = path.join(home, '.claude')
   fs.mkdirSync(config)
@@ -70,10 +70,10 @@ test('Magpie statusline reads Claude API key, uses bearer header, and labels est
       CRS_BACKEND:'auto', CRS_BASE_URL:'', CRS_API_KEY:'', ANTHROPIC_AUTH_TOKEN:'', ANTHROPIC_API_KEY:'', ANTHROPIC_BASE_URL:'', CRS_NO_COLOR:'1' }
     const result = await run(['--statusline'], env)
     assert.equal(result.code, 0, result.err)
-    assert.match(result.out, /magpie~/)
+    assert.match(result.out, /^magpie › local · 5h /)
     assert.match(result.out, /5h.*mine 5\.0%/)
     assert.match(result.out, /7d.*mine 10\.0%/)
-    assert.match(result.out, /快照|缓存过期/)
+    assert.doesNotMatch(result.out, /占已用|快照|缓存过期|magpie~/)
     assert.equal(seen, 1)
     assert.doesNotMatch(result.out, /sample-gateway-key/)
     const denied = await run(['--backend','magpie','--base-url','https://api.anthropic.com','--json'], env)
@@ -95,7 +95,7 @@ test('installer wires the installed plugin into the statusline without running C
   fs.writeFileSync(path.join(config, 'settings.json'), JSON.stringify({env:{
     ANTHROPIC_BASE_URL:'https://www.woodlandfield.top', ANTHROPIC_API_KEY:'install-fixture'
   }}))
-  fs.writeFileSync(path.join(fakeBin, 'claude'), `#!/bin/sh\ncase "$*" in\n  'plugin list --json') echo '[]' ;;\n  'plugin install '*) mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.0"; cp -R "$PLUGIN_SOURCE"/. "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.0/" ;;\nesac\n`, {mode:0o755})
+  fs.writeFileSync(path.join(fakeBin, 'claude'), `#!/bin/sh\ncase "$*" in\n  'plugin list --json') echo '[]' ;;\n  'plugin install '*) mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.1"; cp -R "$PLUGIN_SOURCE"/. "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.1/" ;;\nesac\n`, {mode:0o755})
   const api = http.createServer((req,res) => {
     assert.equal(req.headers.authorization, 'Bearer install-fixture')
     res.setHeader('content-type','application/json')
@@ -119,7 +119,7 @@ test('installer wires the installed plugin into the statusline without running C
     assert.equal(settings.statusLine.command,path.join(config,'crs-statusline.sh'))
     const status = await exec(settings.statusLine.command,[],env)
     assert.equal(status.code,0,status.err)
-    assert.match(status.out,/magpie~.*5h.*mine 5\.0%.*7d.*mine 10\.0%/)
+    assert.match(status.out,/magpie.*5h.*mine 5\.0%.*7d.*mine 10\.0%/)
   } finally {
     await new Promise(resolve=>api.close(resolve))
     fs.rmSync(home,{recursive:true,force:true})

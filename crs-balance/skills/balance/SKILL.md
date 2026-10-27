@@ -59,4 +59,4 @@ token 已唯一定位单个账号，不再需要账号筛选。
 
 ## Magpie
 
-`ANTHROPIC_BASE_URL` 指向 `www.woodlandfield.top` 时自动选择 Magpie；或在 `crs-balance.env` 中设置 `CRS_BACKEND=magpie` 和 `MAGPIE_STATS_URL`。从 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN` 读取当前网关 key，以 Authorization 请求头调用 `/stats/magpie/key`，不会请求 Anthropic。`magpie~`、快照时间和 `mine` 均为本地缓存及网关估算，不能作为实际账单或网关外用量。
+`ANTHROPIC_BASE_URL` 指向 `www.woodlandfield.top` 时自动选择 Magpie；或在 `crs-balance.env` 中设置 `CRS_BACKEND=magpie` 和 `MAGPIE_STATS_URL`。从 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN` 读取当前网关 key，以 Authorization 请求头调用 `/stats/magpie/key`，不会请求 Anthropic。Magpie 的 `mine` 基于本地缓存及网关估算，不能作为实际账单或网关外用量；快照时间可通过 `--json` 查看。

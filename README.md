@@ -87,6 +87,13 @@ crs-balance --watch      # 循环刷新
 
 ## 升级现有用户的 statusLine
 
+如果升级后找不到 `/crs-balance:statusline-repair`，请先刷新 marketplace，再更新插件并重启 Claude Code：
+
+```bash
+claude plugin marketplace update crs-tools
+claude plugin update crs-balance@crs-tools --scope user
+```
+
 如果其他插件（如 `claude-hud`）把 `statusLine` 踹掉了，在 Claude Code 中运行：
 
 ```text

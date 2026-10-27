@@ -1,7 +1,7 @@
 ---
 name: statusline-repair
 description: 修复 CRS statusLine 接管关系。适用于 claude-hud 或其他插件覆盖 ~/.claude/settings.json 的 statusLine 后，恢复 CRS 与上游 statusline 共存。
-allowed-tools: Bash(crs-statusline-repair)
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/../../bin/crs-statusline-repair)
 ---
 
 # CRS Statusline Repair
@@ -9,7 +9,7 @@ allowed-tools: Bash(crs-statusline-repair)
 当用户要求修复 CRS statusline、恢复 CRS 状态栏、或说明 claude-hud 覆盖了 CRS statusline 时，运行：
 
 ```bash
-crs-statusline-repair
+"${CLAUDE_SKILL_DIR}/../../bin/crs-statusline-repair"
 ```
 
 该命令会：

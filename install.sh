@@ -21,6 +21,9 @@ mkdir -p "$CONFIG_DIR"
 echo "==> 添加 CRS Claude Code marketplace"
 claude plugin marketplace add "$MARKETPLACE_URL" >/dev/null || true
 
+echo "==> 刷新 CRS marketplace"
+claude plugin marketplace update crs-tools >/dev/null
+
 echo "==> 安装 CRS balance 插件"
 if claude plugin list --json | node -e '
 let s = "";
@@ -30,7 +33,7 @@ process.stdin.on("end", () => {
   process.exit(xs.some(x => x.id === "crs-balance@crs-tools") ? 0 : 1);
 });
 '; then
-  claude plugin update "$PLUGIN_ID" --scope user >/dev/null || true
+  claude plugin update "$PLUGIN_ID" --scope user >/dev/null
 else
   claude plugin install "$PLUGIN_ID" --scope user >/dev/null
 fi

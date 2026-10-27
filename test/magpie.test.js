@@ -133,6 +133,13 @@ test('installer wires the installed plugin into the statusline without running C
     const withUpstream=await exec(settings.statusLine.command,[],env,input)
     assert.match(withUpstream.out,/^original statusline\nsecond line\nmagpie/)
     assert.equal(fs.readFileSync(path.join(config,'crs-statusline.upstream'),'utf8').trim(),original)
+    const replaced=JSON.parse(fs.readFileSync(path.join(config,'settings.json'),'utf8'))
+    replaced.statusLine.command=original
+    fs.writeFileSync(path.join(config,'settings.json'),JSON.stringify(replaced))
+    const repair=await exec(path.join(config,'plugins/cache/crs-tools/crs-balance/0.7.3/bin/crs-statusline-repair'),[],env)
+    assert.equal(repair.code,0,repair.err)
+    const repaired=await exec(settings.statusLine.command,[],env,input)
+    assert.match(repaired.out,/^original statusline\nsecond line\nmagpie/)
   } finally {
     await new Promise(resolve=>api.close(resolve))
     fs.rmSync(home,{recursive:true,force:true})

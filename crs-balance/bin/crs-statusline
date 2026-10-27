@@ -31,12 +31,8 @@ run_upstream() {
     local upstream_cmd
     upstream_cmd="$(tr -d '\r' < "$upstream_file" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     if [[ -n "$upstream_cmd" ]]; then
-      local upstream_output
-      upstream_output="$(printf '%s' "$input" | bash -c "$upstream_cmd" 2>/dev/null || true)"
-      if [[ -n "$upstream_output" ]]; then
-        printf '%s\n' "$upstream_output"
-        return 0
-      fi
+      printf '%s' "$input" | bash -c "$upstream_cmd" 2>/dev/null || true
+      return 0
     fi
   fi
 
@@ -51,13 +47,6 @@ run_upstream() {
   )"
   if [[ -n "${hud_dir:-}" && -f "${hud_dir}dist/index.js" ]] && command -v node >/dev/null 2>&1; then
     printf '%s' "$input" | node "${hud_dir}dist/index.js" 2>/dev/null || true
-    return 0
-  fi
-
-  # Claude passes these fields on stdin. Reproduce the missing context only
-  # when there is no existing statusline to preserve.
-  if command -v node >/dev/null 2>&1; then
-    printf '%s' "$input" | node "${script_dir}/crs-native-statusline.js" 2>/dev/null || true
   fi
 }
 

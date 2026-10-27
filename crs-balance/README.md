@@ -8,6 +8,8 @@
 
 状态栏查询暂时失败时，会使用不超过 5 分钟的同一 key 缓存并标记“缓存”；认证失败不会使用缓存。
 
+一键安装会保留已有 `statusLine.command`，将 Claude Code 传入的数据原样交给它，再追加用量行；如果先安装插件、之后通过 `/statusline` 替换了设置，请运行 `/crs-balance:statusline-repair` 重新组合。
+
 Claude Code 插件，用于查看上游 Claude 账号的 5h / 7d 使用量，并可集成到 Claude Code statusLine。
 
 支持两个后端，按 `~/.claude/settings.json` 里 `ANTHROPIC_AUTH_TOKEN` 的前缀自动识别 token 归属：

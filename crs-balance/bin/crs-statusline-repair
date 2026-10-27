@@ -97,6 +97,7 @@ if (existing && !isCrsCommand) {
 }
 
 data.statusLine = {
+  ...(data.statusLine && typeof data.statusLine === "object" ? data.statusLine : {}),
   type: "command",
   command: wrapper,
 };

@@ -8,7 +8,8 @@ const crypto = require("crypto");
 
 const DEFAULT_BASE_URL = "https://250924.xyz";
 const DEFAULT_CACHE_SECONDS = 30;
-const CACHE_SCHEMA = 4;
+const CACHE_SCHEMA = 5;
+const MAGPIE_DEFAULT_URL = "https://stats.woodlandfield.top";
 
 // ── env helpers ─────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ function loadEnvFile() {
 function loadClaudeSettingsEnv() {
   const home = process.env.HOME || "";
   if (!home) return;
-  const file = path.join(home, ".claude", "settings.json");
+  const file = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"), "settings.json");
   if (!fs.existsSync(file)) return;
   try {
     const raw = fs.readFileSync(file, "utf8");
@@ -81,8 +82,9 @@ function parseArgs(argv) {
     json: false,
     watch: false,
     interval: 60,
-    baseUrl: process.env.CRS_BASE_URL || DEFAULT_BASE_URL,
-    token: process.env.CRS_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || null,
+    baseUrl: null,
+    backend: process.env.CRS_BACKEND || "auto",
+    token: null,
     cacheSeconds: Number(process.env.CRS_CACHE_SECONDS) || DEFAULT_CACHE_SECONDS,
     noColor: !!process.env.CRS_NO_COLOR
   };
@@ -99,6 +101,8 @@ function parseArgs(argv) {
         opts.interval = Number(argv[++i]) || opts.interval; break;
       case "--base-url":
         opts.baseUrl = argv[++i]; break;
+      case "--backend":
+        opts.backend = argv[++i]; break;
       case "--token":
         opts.token = argv[++i]; break;
       case "--cache-seconds":
@@ -129,6 +133,22 @@ function parseArgs(argv) {
         }
     }
   }
+  if (!['auto', 'magpie', 'crs', 'crs2'].includes(opts.backend)) throw new Error('无效的 backend');
+  if (opts.backend === 'auto') {
+    let host = '';
+    try { host = new URL(process.env.ANTHROPIC_BASE_URL || '').hostname.toLowerCase(); } catch (_) {}
+    if (host === 'www.woodlandfield.top' || host === 'woodlandfield.top' || process.env.MAGPIE_STATS_URL) opts.backend = 'magpie';
+  }
+  opts.baseUrl = opts.baseUrl || (opts.backend === 'magpie' ? (process.env.MAGPIE_STATS_URL || MAGPIE_DEFAULT_URL) : (process.env.CRS_BASE_URL || DEFAULT_BASE_URL));
+  opts.token = opts.token || process.env.CRS_API_KEY || (opts.backend === 'magpie' ? (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) : process.env.ANTHROPIC_AUTH_TOKEN) || null;
+  const target = new URL(opts.baseUrl);
+  const host = target.hostname.toLowerCase().replace(/\.$/, '');
+  if (host === 'anthropic.com' || host.endsWith('.anthropic.com') || host === 'claude.ai' || host.endsWith('.claude.ai') || host === 'claude.com' || host.endsWith('.claude.com')) {
+    throw new Error('禁止将用量查询发送到 Anthropic');
+  }
+  if (target.protocol !== 'https:' && !(target.protocol === 'http:' && ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host))) {
+    throw new Error('用量接口必须使用 HTTPS（本地测试可使用 HTTP）');
+  }
   if (opts.noColor) process.env.CRS_NO_COLOR = "1";
   return opts;
 }
@@ -145,12 +165,13 @@ function printHelp() {
   --watch            循环刷新 (interval 秒)
   --interval N       刷新间隔 (默认 60s)
   --base-url URL     覆盖默认 ${DEFAULT_BASE_URL}
+  --backend NAME     auto、magpie、crs 或 crs2
   --token TOKEN      显式提供 API key token (默认读 ANTHROPIC_AUTH_TOKEN)
   --cache-seconds N  缓存秒数 (默认 ${DEFAULT_CACHE_SECONDS})
   --no-color         禁用颜色
 
 环境变量:
-  CRS_BASE_URL, CRS_API_KEY, ANTHROPIC_AUTH_TOKEN,
+  CRS_BASE_URL, CRS_BACKEND, MAGPIE_STATS_URL, CRS_API_KEY, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY,
   CRS_CACHE_SECONDS, CRS_NO_COLOR, CRS_BAR_CELLS
 
 数据源:
@@ -164,7 +185,10 @@ function printHelp() {
 
 // Pick the backend by token prefix: cr_ → crs (Redis), sk- → crs2 (sub2api).
 // Both expose the same /key report shape, only the path differs.
-function resolveBackend(token) {
+function resolveBackend(token, selected) {
+  if (selected === 'magpie') return { name: 'magpie', path: '/stats/magpie/key' };
+  if (selected === 'crs') return { name: 'crs', path: '/stats/key/' };
+  if (selected === 'crs2') return { name: 'crs2', path: '/stats/crs2/key/' };
   if (typeof token === "string" && token.startsWith("sk-")) {
     return { name: "crs2", path: "/stats/crs2/key/" };
   }
@@ -177,11 +201,12 @@ async function fetchKeyReport(opts) {
     err.missingToken = true;
     throw err;
   }
-  const backend = resolveBackend(opts.token);
-  const url = `${opts.baseUrl.replace(/\/$/, "")}${backend.path}${encodeURIComponent(opts.token)}`;
+  const backend = resolveBackend(opts.token, opts.backend);
+  const url = `${opts.baseUrl.replace(/\/$/, "")}${backend.path}${backend.name === 'magpie' ? '' : encodeURIComponent(opts.token)}`;
   let res;
   try {
-    res = await fetch(url, { method: "GET" });
+    res = await fetch(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(10000),
+      headers: backend.name === 'magpie' ? { Authorization: `Bearer ${opts.token}` } : {} });
   } catch (e) {
     throw new Error(`request failed: ${e.message}`);
   }
@@ -198,7 +223,7 @@ async function fetchKeyReport(opts) {
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error("stats API 返回空数组");
   }
-  return { report: data[0], backend: backend.name };
+  return { report: data[0], reports: data, backend: backend.name };
 }
 
 async function fetchAggregateAccountReport(opts, accountName) {
@@ -208,7 +233,7 @@ async function fetchAggregateAccountReport(opts, accountName) {
   const url = `${opts.baseUrl.replace(/\/$/, "")}/stats/aggregate/account/${encodeURIComponent(accountName)}`;
   let res;
   try {
-    res = await fetch(url, { method: "GET" });
+    res = await fetch(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(10000) });
   } catch (e) {
     throw new Error(`aggregate request failed: ${e.message}`);
   }
@@ -346,6 +371,7 @@ function buildSnapshot(report, backend, aggregate) {
     backend: backend || "crs",
     key: report.key,
     source: aggregate ? "aggregate" : "key",
+    dataQuality: report.dataQuality || null,
     accounts: [
       {
         accountId: acc.id || null,
@@ -385,9 +411,9 @@ function cachePath() {
   return process.env.CRS_CACHE_FILE || `${home}/.claude/crs-balance-status-cache-v${CACHE_SCHEMA}.json`;
 }
 
-function tokenFingerprint(token) {
+function tokenFingerprint(token, opts) {
   if (!token) return "anon";
-  return crypto.createHash("sha256").update(token).digest("hex").slice(0, 12);
+  return crypto.createHash("sha256").update(token + "\0" + opts.backend + "\0" + opts.baseUrl).digest("hex").slice(0, 12);
 }
 
 function readCachedSnapshot(opts) {
@@ -395,7 +421,7 @@ function readCachedSnapshot(opts) {
     const raw = fs.readFileSync(cachePath(), "utf8");
     const cached = JSON.parse(raw);
     if (!cached || cached.schema !== CACHE_SCHEMA) return null;
-    if (cached.tokenFingerprint !== tokenFingerprint(opts.token)) return null;
+    if (cached.tokenFingerprint !== tokenFingerprint(opts.token, opts)) return null;
     const age = (Date.now() - new Date(cached.generatedAt).getTime()) / 1000;
     return age <= opts.cacheSeconds ? cached.snapshot : null;
   } catch (_) {
@@ -412,7 +438,7 @@ function writeCachedSnapshot(opts, snapshot) {
       JSON.stringify({
         schema: CACHE_SCHEMA,
         generatedAt: new Date().toISOString(),
-        tokenFingerprint: tokenFingerprint(opts.token),
+        tokenFingerprint: tokenFingerprint(opts.token, opts),
         snapshot
       }),
       "utf8"
@@ -524,21 +550,25 @@ function mineEffectivePct(row, windowKey) {
   return (window.usedPct * share.pct) / 100;
 }
 
-function keyShareStatus(row, windowKey) {
+function keyShareStatus(row, windowKey, estimated = false) {
   const share = row.keyShare && row.keyShare[windowKey];
   if (!share || share.pct == null) return "";
   const absolute = mineEffectivePct(row, windowKey) || 0;
-  return ` ${color("·", ANSI.dim)} ${color("mine", ANSI.dim)} ${color(`${absolute.toFixed(1)}%`, ANSI.cyan)}`;
+  const fraction = estimated ? ` ${color(`占已用≈${share.pct.toFixed(1)}%`, ANSI.dim)}` : '';
+  return ` ${color("·", ANSI.dim)} ${color("mine", ANSI.dim)} ${color(`${absolute.toFixed(1)}%`, ANSI.cyan)}${fraction}`;
 }
 
 function renderStatusline(snapshot) {
   if (!snapshot.accounts.length) return "CRS 未匹配账号";
   const row = snapshot.accounts[0];
   const statusTail = row.status.includes("ok") ? "" : ` ${color(row.status.join(","), ANSI.red)}`;
+  const label = snapshot.backend === 'magpie' ? 'magpie~' : (snapshot.backend || 'crs');
+  const stamp = snapshot.backend === 'magpie' && snapshot.dataQuality && snapshot.dataQuality.snapshotAt
+    ? ` ${color('快照 ' + new Date(snapshot.dataQuality.snapshotAt).toLocaleString() + (Date.now() - Date.parse(snapshot.dataQuality.snapshotAt) > 300000 ? ' 缓存过期' : ''), ANSI.dim)}` : '';
   return (
-    `${color(snapshot.backend || "crs", ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ` +
-    `${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour, mineEffectivePct(row, "fiveHour"))}${keyShareStatus(row, "fiveHour")} ` +
-    `${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay, mineEffectivePct(row, "sevenDay"))}${keyShareStatus(row, "sevenDay")}${statusTail}`
+    `${color(label, ANSI.cyan)} ${color("›", ANSI.dim)} ${color(row.account, ANSI.dim)} ` +
+    `${color("·", ANSI.dim)} ${windowStatus("5h", row.windows.fiveHour, mineEffectivePct(row, "fiveHour"))}${keyShareStatus(row, "fiveHour", snapshot.backend === 'magpie')} ` +
+    `${color("·", ANSI.dim)} ${windowStatus("7d", row.windows.sevenDay, mineEffectivePct(row, "sevenDay"))}${keyShareStatus(row, "sevenDay", snapshot.backend === 'magpie')}${stamp}${statusTail}`
   );
 }
 
@@ -594,7 +624,13 @@ function renderTable(snapshot) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchOnce(opts) {
-  const { report, backend } = await fetchKeyReport(opts);
+  const { report, reports, backend } = await fetchKeyReport(opts);
+  if (backend === 'magpie') {
+    if (reports.length !== 1) throw new Error('当前 key 对应多个账号，无法确定状态栏显示的账号');
+    const result = buildSnapshot(report, backend, null);
+    result.accounts = reports.flatMap(r => buildSnapshot(r, backend, null).accounts);
+    return result;
+  }
   const accountName = report && report.account && report.account.name;
   const aggregate = await fetchAggregateAccountReport(opts, accountName);
   return buildSnapshot(report, backend, aggregate);

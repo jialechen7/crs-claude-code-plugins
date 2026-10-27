@@ -1,7 +1,7 @@
 ---
 name: balance
 description: 查看上游 Claude 账号的 5h、7d 用量及当前 key 的占比，支持 CRS、crs2/sub2api 和本地缓存驱动的 Magpie。适用于用户询问账号余额、用量、quota 或 utilization。
-allowed-tools: Bash(crs-balance) Bash(crs-balance *)
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/../../bin/crs-balance) Bash(${CLAUDE_SKILL_DIR}/../../bin/crs-balance *)
 ---
 
 # CRS Balance
@@ -9,7 +9,7 @@ allowed-tools: Bash(crs-balance) Bash(crs-balance *)
 当用户要求查看 CRS / crs2 / Claude 上游账号余额或用量时，运行：
 
 ```bash
-crs-balance $ARGUMENTS
+"${CLAUDE_SKILL_DIR}/../../bin/crs-balance" $ARGUMENTS
 ```
 
 如果用户没有传参数，直接运行 `crs-balance`，输出当前 token 对应账号的 5h / 7d / Opus 用量快照。

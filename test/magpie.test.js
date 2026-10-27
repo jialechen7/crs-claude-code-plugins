@@ -97,7 +97,7 @@ test('installer wires the installed plugin into the statusline without running C
   fs.writeFileSync(path.join(config, 'settings.json'), JSON.stringify({env:{
     ANTHROPIC_BASE_URL:'https://www.woodlandfield.top', ANTHROPIC_API_KEY:'install-fixture'
   },statusLine:{type:'command',command:original,padding:2}}))
-  fs.writeFileSync(path.join(fakeBin, 'claude'), `#!/bin/sh\ncase "$*" in\n  'plugin list --json') echo '[]' ;;\n  'plugin install '*) mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.3"; cp -R "$PLUGIN_SOURCE"/. "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.3/" ;;\nesac\n`, {mode:0o755})
+  fs.writeFileSync(path.join(fakeBin, 'claude'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$CLAUDE_CONFIG_DIR/cli.log"\ncase "$*" in\n  'plugin marketplace update crs-tools') [ "\${FAKE_UPDATE_FAIL:-0}" != 1 ] || exit 4 ;;\n  'plugin list --json') echo '[]' ;;\n  'plugin install '*) mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.4"; cp -R "$PLUGIN_SOURCE"/. "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.4/" ;;\nesac\n`, {mode:0o755})
   const api = http.createServer((req,res) => {
     assert.equal(req.headers.authorization, 'Bearer install-fixture')
     res.setHeader('content-type','application/json')
@@ -117,6 +117,8 @@ test('installer wires the installed plugin into the statusline without running C
       CRS_BACKEND:'auto', CRS_BASE_URL:'', CRS_API_KEY:'', ANTHROPIC_API_KEY:'', ANTHROPIC_AUTH_TOKEN:'', ANTHROPIC_BASE_URL:'', CRS_NO_COLOR:'1'}
     const install = await exec('bash',[path.join(__dirname,'../install.sh')],env)
     assert.equal(install.code,0,install.err)
+    const calls=fs.readFileSync(path.join(config,'cli.log'),'utf8').split('\n')
+    assert.ok(calls.indexOf('plugin marketplace update crs-tools') < calls.indexOf('plugin list --json'))
     const settings = JSON.parse(fs.readFileSync(path.join(config,'settings.json'),'utf8'))
     assert.equal(settings.statusLine.command,path.join(config,'crs-statusline.sh'))
     assert.equal(settings.statusLine.padding,2)
@@ -136,10 +138,16 @@ test('installer wires the installed plugin into the statusline without running C
     const replaced=JSON.parse(fs.readFileSync(path.join(config,'settings.json'),'utf8'))
     replaced.statusLine.command=original
     fs.writeFileSync(path.join(config,'settings.json'),JSON.stringify(replaced))
-    const repair=await exec(path.join(config,'plugins/cache/crs-tools/crs-balance/0.7.3/bin/crs-statusline-repair'),[],env)
+    const skillDir=path.join(config,'plugins/cache/crs-tools/crs-balance/0.7.4/skills/statusline-repair')
+    const skill=fs.readFileSync(path.join(skillDir,'SKILL.md'),'utf8')
+    const skillCommand=skill.match(/```bash\n([^\n]+)\n```/)[1].replaceAll('${CLAUDE_SKILL_DIR}',skillDir)
+    const repair=await exec('bash',['-c',skillCommand],env)
     assert.equal(repair.code,0,repair.err)
     const repaired=await exec(settings.statusLine.command,[],env,input)
     assert.match(repaired.out,/^original statusline\nsecond line\nmagpie/)
+    const failedRefresh=await exec('bash',[path.join(__dirname,'../install.sh')],{...env,FAKE_UPDATE_FAIL:'1'})
+    assert.notEqual(failedRefresh.code,0)
+    assert.doesNotMatch(failedRefresh.out,/安装完成/)
   } finally {
     await new Promise(resolve=>api.close(resolve))
     fs.rmSync(home,{recursive:true,force:true})

@@ -95,7 +95,7 @@ test('installer wires the installed plugin into the statusline without running C
   fs.writeFileSync(path.join(config, 'settings.json'), JSON.stringify({env:{
     ANTHROPIC_BASE_URL:'https://www.woodlandfield.top', ANTHROPIC_API_KEY:'install-fixture'
   }}))
-  fs.writeFileSync(path.join(fakeBin, 'claude'), `#!/bin/sh\ncase "$*" in\n  'plugin list --json') echo '[]' ;;\n  'plugin install '*) mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.1"; cp -R "$PLUGIN_SOURCE"/. "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.1/" ;;\nesac\n`, {mode:0o755})
+  fs.writeFileSync(path.join(fakeBin, 'claude'), `#!/bin/sh\ncase "$*" in\n  'plugin list --json') echo '[]' ;;\n  'plugin install '*) mkdir -p "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.2"; cp -R "$PLUGIN_SOURCE"/. "$CLAUDE_CONFIG_DIR/plugins/cache/crs-tools/crs-balance/0.7.2/" ;;\nesac\n`, {mode:0o755})
   const api = http.createServer((req,res) => {
     assert.equal(req.headers.authorization, 'Bearer install-fixture')
     res.setHeader('content-type','application/json')
@@ -104,10 +104,10 @@ test('installer wires the installed plugin into the statusline without running C
       sevenDay:{shareOfAccount:0.25},dataQuality:{costType:'estimated_api_equivalent'}}]))
   })
   await new Promise(resolve => api.listen(0,'127.0.0.1',resolve))
-  const exec = (command,args,env) => new Promise((resolve,reject) => {
+  const exec = (command,args,env,input='{}') => new Promise((resolve,reject) => {
     const child = spawn(command,args,{env,stdio:['pipe','pipe','pipe']})
     let out='',err=''; child.stdout.on('data',d=>out+=d); child.stderr.on('data',d=>err+=d)
-    child.on('error',reject); child.on('close',code=>resolve({code,out,err})); child.stdin.end('{}')
+    child.on('error',reject); child.on('close',code=>resolve({code,out,err})); child.stdin.end(input)
   })
   try {
     const env={...process.env, HOME:home, CLAUDE_CONFIG_DIR:config, PLUGIN_SOURCE:path.join(__dirname,'../crs-balance'),
@@ -117,11 +117,51 @@ test('installer wires the installed plugin into the statusline without running C
     assert.equal(install.code,0,install.err)
     const settings = JSON.parse(fs.readFileSync(path.join(config,'settings.json'),'utf8'))
     assert.equal(settings.statusLine.command,path.join(config,'crs-statusline.sh'))
-    const status = await exec(settings.statusLine.command,[],env)
+    const input=JSON.stringify({model:{display_name:'Claude Test'},workspace:{current_dir:path.join(home,'project')},context_window:{context_window_size:200000,used_percentage:34}})
+    const status = await exec(settings.statusLine.command,[],env,input)
     assert.equal(status.code,0,status.err)
+    assert.match(status.out,/^Claude Test · ~\/project · context 34% \/ 200k\n/)
     assert.match(status.out,/magpie.*5h.*mine 5\.0%.*7d.*mine 10\.0%/)
+    fs.writeFileSync(path.join(config,'crs-statusline.upstream'), "printf 'original statusline\\n'\n")
+    const withUpstream=await exec(settings.statusLine.command,[],env,input)
+    assert.match(withUpstream.out,/^original statusline\nmagpie/)
+    assert.doesNotMatch(withUpstream.out,/Claude Test/)
   } finally {
     await new Promise(resolve=>api.close(resolve))
     fs.rmSync(home,{recursive:true,force:true})
+  }
+})
+
+test('temporary errors use a labelled same-key cache, but authorization failures do not', async () => {
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'magpie-cache-'))
+  const config=path.join(home,'.claude'); fs.mkdirSync(config)
+  fs.writeFileSync(path.join(config,'settings.json'),JSON.stringify({env:{ANTHROPIC_BASE_URL:'https://www.woodlandfield.top',ANTHROPIC_API_KEY:'fixture-key'}}))
+  let code=200
+  const api=http.createServer((req,res)=>{
+    if (code === 0) return // Simulate a network request that never completes.
+    res.statusCode=code; res.setHeader('content-type','application/json')
+    res.end(code===200 ? JSON.stringify([{key:{name:'one'},account:{name:'local',status:'active',schedulable:true,
+      fiveHour:{utilization:20},sevenDay:{utilization:40}},fiveHour:{shareOfAccount:0.25},sevenDay:{shareOfAccount:0.25}}]) : '{}')
+  })
+  await new Promise(resolve=>api.listen(0,'127.0.0.1',resolve))
+  try {
+    const cache=path.join(home,'cache.json')
+    const env={HOME:home,CLAUDE_CONFIG_DIR:config,CRS_CACHE_FILE:cache,MAGPIE_STATS_URL:`http://127.0.0.1:${api.address().port}`,
+      CRS_BACKEND:'auto',CRS_BASE_URL:'',CRS_API_KEY:'',ANTHROPIC_AUTH_TOKEN:'',ANTHROPIC_API_KEY:'',ANTHROPIC_BASE_URL:'',CRS_NO_COLOR:'1'}
+    assert.match((await run(['--statusline'],env)).out,/magpie.*mine 5\.0%/)
+    const cached=JSON.parse(fs.readFileSync(cache)); cached.generatedAt=new Date(Date.now()-45000).toISOString(); fs.writeFileSync(cache,JSON.stringify(cached))
+    code=503
+    assert.match((await run(['--statusline'],env)).out,/magpie.*mine 5\.0%.*缓存/)
+    code=0
+    assert.match((await run(['--statusline'],env)).out,/magpie.*mine 5\.0%.*缓存/)
+    code=401
+    const denied=await run(['--statusline'],env)
+    assert.match(denied.out,/CRS HTTP 401/)
+    assert.doesNotMatch(denied.out,/缓存/)
+    code=503
+    cached.generatedAt=new Date(Date.now()-301000).toISOString(); fs.writeFileSync(cache,JSON.stringify(cached))
+    assert.doesNotMatch((await run(['--statusline'],env)).out,/缓存/)
+  } finally {
+    await new Promise(resolve=>api.close(resolve)); fs.rmSync(home,{recursive:true,force:true})
   }
 })

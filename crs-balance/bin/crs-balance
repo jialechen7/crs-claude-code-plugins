@@ -205,9 +205,10 @@ async function fetchKeyReport(opts) {
   const url = `${opts.baseUrl.replace(/\/$/, "")}${backend.path}${backend.name === 'magpie' ? '' : encodeURIComponent(opts.token)}`;
   let res;
   try {
-    res = await fetch(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(10000),
+    res = await fetch(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(backend.name === 'magpie' ? 5000 : 10000),
       headers: backend.name === 'magpie' ? { Authorization: `Bearer ${opts.token}` } : {} });
   } catch (e) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') throw new Error('请求超时');
     throw new Error(`request failed: ${e.message}`);
   }
   if (res.status === 404) {
@@ -217,7 +218,9 @@ async function fetchKeyReport(opts) {
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+    const err = new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
   }
   const data = await res.json();
   if (!Array.isArray(data) || data.length === 0) {
@@ -416,14 +419,14 @@ function tokenFingerprint(token, opts) {
   return crypto.createHash("sha256").update(token + "\0" + opts.backend + "\0" + opts.baseUrl).digest("hex").slice(0, 12);
 }
 
-function readCachedSnapshot(opts) {
+function readCachedSnapshot(opts, maxAgeSeconds = opts.cacheSeconds) {
   try {
     const raw = fs.readFileSync(cachePath(), "utf8");
     const cached = JSON.parse(raw);
     if (!cached || cached.schema !== CACHE_SCHEMA) return null;
     if (cached.tokenFingerprint !== tokenFingerprint(opts.token, opts)) return null;
     const age = (Date.now() - new Date(cached.generatedAt).getTime()) / 1000;
-    return age <= opts.cacheSeconds ? cached.snapshot : null;
+    return Number.isFinite(age) && age >= 0 && age <= maxAgeSeconds ? cached.snapshot : null;
   } catch (_) {
     return null;
   }
@@ -648,6 +651,14 @@ async function main() {
       writeCachedSnapshot(opts, snapshot);
       console.log(renderStatusline(snapshot));
     } catch (err) {
+      // On temporary failures, keep the last successful same-key snapshot briefly.
+      // Never mask an invalid/revoked key, and mark the output as cached.
+      const retryable = !err.missingToken && (!err.status || err.status === 429 || err.status >= 500);
+      const stale = retryable ? readCachedSnapshot(opts, 300) : null;
+      if (stale) {
+        console.log(`${renderStatusline(stale)} ${color("· 缓存", ANSI.dim)}`);
+        return;
+      }
       if (err.missingToken) console.log("CRS 未配置 token");
       else if (err.status === 404) console.log("CRS token 无效");
       else console.log(`CRS ${err.message.slice(0, 40)}`);

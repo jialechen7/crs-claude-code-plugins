@@ -51,7 +51,10 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "==> 创建配置模板: $ENV_FILE"
   cat > "$ENV_FILE" <<'ENV'
 # CRS balance 插件配置 (0.4.0+, 不再需要 admin 凭据)
-# token 默认从 ~/.claude/settings.json 的 env.ANTHROPIC_AUTH_TOKEN 自动读取
+# token 默认从 ~/.claude/settings.json 的 ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY 自动读取。
+# woodlandfield.top 的 Magpie 网关会自动识别；其他 Magpie 部署可设置：
+# export CRS_BACKEND="magpie"
+# export MAGPIE_STATS_URL="https://你的用量接口域名"
 # 一般情况下本文件保持空白即可。
 
 # 仅当 stats API 自建实例时才覆盖:

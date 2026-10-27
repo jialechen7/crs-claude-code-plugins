@@ -1,6 +1,6 @@
 ---
 name: balance
-description: 查看上游 Claude 账号的 5h、7d、7d Opus 使用率、剩余额度、reset 时间和调度状态，支持 CRS 与 crs2/sub2api（按 token 前缀自动识别）。适用于用户询问 CRS / crs2 余额、Claude 账号余额、上游账号用量、quota 或 utilization。
+description: 查看上游 Claude 账号的 5h、7d 用量及当前 key 的占比，支持 CRS、crs2/sub2api 和本地缓存驱动的 Magpie。适用于用户询问账号余额、用量、quota 或 utilization。
 allowed-tools: Bash(crs-balance) Bash(crs-balance *)
 ---
 
@@ -56,3 +56,7 @@ crs-balance $ARGUMENTS
 0.4.0 起，以下配置项已不再需要，存在也会被忽略：`CRS_ADMIN_USER` / `CRS_ADMIN_PASS` / `CRS_ACCOUNT_*` / `CRS_API_KEY_ID` / `CRS_API_KEY_NAME` / `--user` / `--password` / `--account-*` / `--api-key-*` / `--all` / `--no-key-share`。
 
 token 已唯一定位单个账号，不再需要账号筛选。
+
+## Magpie
+
+`ANTHROPIC_BASE_URL` 指向 `www.woodlandfield.top` 时自动选择 Magpie；或在 `crs-balance.env` 中设置 `CRS_BACKEND=magpie` 和 `MAGPIE_STATS_URL`。从 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN` 读取当前网关 key，以 Authorization 请求头调用 `/stats/magpie/key`，不会请求 Anthropic。`magpie~`、快照时间和 `mine` 均为本地缓存及网关估算，不能作为实际账单或网关外用量。

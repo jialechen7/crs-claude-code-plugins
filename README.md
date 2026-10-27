@@ -2,6 +2,8 @@
 
 Claude Code 插件 marketplace，目前包含：
 
+`crs-balance` 也支持 Magpie 本地用量缓存。若 Claude Code 的网关地址为 `https://www.woodlandfield.top`，插件会自动使用对应的用量接口与当前网关 key；其他部署可配置 `CRS_BACKEND=magpie` 和 `MAGPIE_STATS_URL`。Magpie 的 `mine` 是本地已记录费用的估算分摊，展示的是额度快照，不会调用 Anthropic。
+
 - `crs-balance`：查看上游 Claude 账号 5h / 7d 使用量（支持 CRS 与 crs2/sub2api），并可集成到 Claude Code statusLine。
 
 ## 0.6.0 重要变更

@@ -1,5 +1,11 @@
 # crs-balance
 
+## Magpie 用量
+
+安装后，当 Claude Code 的 `ANTHROPIC_BASE_URL` 为 `https://www.woodlandfield.top` 时，插件自动从本机 `settings.json` 的 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN` 读取 Magpie 网关 key，并使用 `https://stats.woodlandfield.top/stats/magpie/key` 查询。密钥只放 Authorization 请求头，不放 URL。
+
+其他 Magpie 部署可在 `~/.claude/crs-balance.env` 设置 `CRS_BACKEND=magpie` 与 `MAGPIE_STATS_URL=https://你的用量服务`。状态栏 `magpie~` 表示基于缓存和本地模型价格的估算，`mine` 是本 key 的估算费用份额乘以账号额度快照；`快照`或`缓存过期`会标明缓存时间。它不是实际账单，只覆盖已记录的网关请求，站外使用和不可定价的请求不能准确归因。插件与后端不会为此调用 Anthropic。
+
 Claude Code 插件，用于查看上游 Claude 账号的 5h / 7d 使用量，并可集成到 Claude Code statusLine。
 
 支持两个后端，按 `~/.claude/settings.json` 里 `ANTHROPIC_AUTH_TOKEN` 的前缀自动识别 token 归属：

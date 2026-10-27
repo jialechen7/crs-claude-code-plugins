@@ -6,6 +6,10 @@
 
 其他 Magpie 部署可在 `~/.claude/crs-balance.env` 设置 `CRS_BACKEND=magpie` 与 `MAGPIE_STATS_URL=https://你的用量服务`。状态栏的 `mine` 是本 key 的估算费用份额乘以账号额度快照；可通过 `--json` 查看快照时间和数据说明。它不是实际账单，只覆盖已记录的网关请求，站外使用和不可定价的请求不能准确归因。插件与后端不会为此调用 Anthropic。
 
+状态栏查询暂时失败时，会使用不超过 5 分钟的同一 key 缓存并标记“缓存”；认证失败不会使用缓存。
+
+一键安装会保留已有 `statusLine.command`，将 Claude Code 传入的数据原样交给它，再追加用量行；如果先安装插件、之后通过 `/statusline` 替换了设置，请运行 `/crs-balance:statusline-repair` 重新组合。
+
 Claude Code 插件，用于查看上游 Claude 账号的 5h / 7d 使用量，并可集成到 Claude Code statusLine。
 
 支持两个后端，按 `~/.claude/settings.json` 里 `ANTHROPIC_AUTH_TOKEN` 的前缀自动识别 token 归属：

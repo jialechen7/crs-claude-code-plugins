@@ -9,7 +9,9 @@ if [[ -n "${CRS_STATUSLINE_GUARD:-}" ]]; then
 fi
 export CRS_STATUSLINE_GUARD=1
 
-input="$(cat)"
+# Preserve trailing newlines too, so an existing statusline receives the same input.
+input="$(cat; printf '\034')"
+input="${input%$'\034'}"
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 env_file="${CRS_ENV_FILE:-$config_dir/crs-balance.env}"
@@ -20,11 +22,6 @@ if [[ -f "$env_file" ]]; then
 fi
 
 run_upstream() {
-  case "$input" in
-    \{*) ;;
-    *) return 0 ;;
-  esac
-
   # 首选:install.sh 接管时记录的上游 statusLine 命令。任何其他 statusline 插件都能这样接进来。
   local upstream_file="$config_dir/crs-statusline.upstream"
   if [[ -s "$upstream_file" ]]; then
@@ -37,6 +34,10 @@ run_upstream() {
   fi
 
   # 兼容 fallback:老用户没有 upstream 文件,但装了 claude-hud 的情况。
+  case "$input" in
+    \{*) ;;
+    *) return 0 ;;
+  esac
   local hud_dir
   hud_dir="$(
     ls -d "$config_dir"/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null |

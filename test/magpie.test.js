@@ -187,3 +187,29 @@ test('temporary errors use a labelled same-key cache, but authorization failures
     await new Promise(resolve=>api.close(resolve)); fs.rmSync(home,{recursive:true,force:true})
   }
 })
+
+test('manual refresh bypasses fresh local cache and retains stale fallback on failure', async () => {
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'magpie-manual-refresh-'))
+  const config=path.join(home,'.claude'); fs.mkdirSync(config)
+  fs.writeFileSync(path.join(config,'settings.json'),JSON.stringify({env:{ANTHROPIC_BASE_URL:'https://www.woodlandfield.top',ANTHROPIC_API_KEY:'fixture-key'}}))
+  let seen=0, failure=false
+  const api=http.createServer((req,res)=>{
+    seen++; res.setHeader('content-type','application/json');
+    if (failure) {res.statusCode=503; return res.end('{}')}
+    res.end(JSON.stringify([{key:{name:'one'},account:{name:'local',status:'active',schedulable:true,
+      fiveHour:{utilization:seen*10},sevenDay:{utilization:40}},fiveHour:{shareOfAccount:0.25},sevenDay:{shareOfAccount:0.25}}]))
+  })
+  await new Promise(resolve=>api.listen(0,'127.0.0.1',resolve))
+  try {
+    const env={HOME:home,CLAUDE_CONFIG_DIR:config,MAGPIE_STATS_URL:`http://127.0.0.1:${api.address().port}`,CRS_BACKEND:'auto',
+      CRS_BASE_URL:'',CRS_API_KEY:'',ANTHROPIC_AUTH_TOKEN:'',ANTHROPIC_API_KEY:'',ANTHROPIC_BASE_URL:'',CRS_NO_COLOR:'1'}
+    assert.match((await run(['--statusline'],env)).out,/10\.0%/)
+    assert.match((await run(['--statusline'],env)).out,/10\.0%/)
+    assert.equal(seen,1)
+    assert.match((await run(['--statusline','--cache-seconds','-1'],env)).out,/20\.0%/)
+    assert.equal(seen,2)
+    failure=true
+    assert.match((await run(['--statusline','--cache-seconds','-1'],env)).out,/20\.0%.*缓存/)
+    assert.equal(seen,3)
+  } finally { await new Promise(resolve=>api.close(resolve)); fs.rmSync(home,{recursive:true,force:true}) }
+})

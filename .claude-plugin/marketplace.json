@@ -14,7 +14,30 @@
       "description": "查看 CRS、crs2 和 Magpie 的 5h / 7d 用量，并集成 Claude Code statusLine。",
       "version": "0.7.4",
       "category": "monitoring",
-      "tags": ["crs", "crs2", "sub2api", "claude", "balance", "usage", "statusline"]
+      "tags": [
+        "crs",
+        "crs2",
+        "sub2api",
+        "claude",
+        "balance",
+        "usage",
+        "statusline"
+      ]
+    },
+    {
+      "name": "crs-desktop",
+      "source": "./crs-desktop",
+      "description": "在 Claude Desktop Code 中展示已有 CRS/Magpie 用量。",
+      "version": "0.1.3",
+      "category": "monitoring",
+      "tags": [
+        "crs",
+        "magpie",
+        "claude",
+        "desktop",
+        "usage",
+        "mod"
+      ]
     }
   ]
 }

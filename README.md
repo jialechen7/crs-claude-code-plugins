@@ -1,10 +1,11 @@
 # crs-claude-code-plugins
 
-Claude Code 插件 marketplace，目前包含：
+Claude Code 用量插件，支持 CRS、crs2/sub2api 和 Magpie：
 
-`crs-balance` 也支持 Magpie 本地用量缓存。若 Claude Code 的网关地址为 `https://www.woodlandfield.top`，插件会自动使用对应的用量接口与当前网关 key；其他部署可配置 `CRS_BACKEND=magpie` 和 `MAGPIE_STATS_URL`。Magpie 的 `mine` 是本地已记录费用的估算分摊，展示的是额度快照，不会调用 Anthropic。
+- `crs-balance`：在 CLI 状态栏展示 5h、7d 用量及当前 key 的 `mine` 占比。
+- `crs-desktop`：在 Claude Desktop 的 Code 本地会话输入框上方展示同样的用量，保留右侧 Context 和其他 Mod 的界面。
 
-- `crs-balance`：查看上游 Claude 账号 5h / 7d 使用量（支持 CRS 与 crs2/sub2api），并可集成到 Claude Code statusLine。
+Magpie 的 `mine` 是基于网关本地记录和模型价格估算的用量分摊；账号额度来自已有的本地缓存快照。用量查询不会请求 Anthropic。
 
 ## 0.6.0 重要变更
 
@@ -40,18 +41,30 @@ curl -fsSL https://raw.githubusercontent.com/jialechen7/crs-claude-code-plugins/
 安装脚本会完成：
 
 - 添加 `crs-tools` marketplace
-- 安装 `crs-balance@crs-tools`
+- 安装或更新 `crs-balance@crs-tools` 和 `crs-desktop@crs-tools`
 - 创建 `~/.claude/crs-balance.env` 模板（默认空白，token 自动识别）
 - 创建稳定 wrapper `~/.claude/crs-statusline.sh`
 - 自动写入 `~/.claude/settings.json` 的 `statusLine`
 - 检测到旧 admin 配置时打印迁移提示
+- 如果之前安装过 `crs-desktop@crs-desktop-local` 本地试用版，在新插件安装成功后移除旧插件，避免重复展示
 
 也可以手动安装：
 
 ```bash
 claude plugin marketplace add https://github.com/jialechen7/crs-claude-code-plugins.git
 claude plugin install crs-balance@crs-tools --scope user
+claude plugin install crs-desktop@crs-tools --scope user
 ```
+
+手动安装只安装插件；需要设置 CLI 状态栏时，请运行一键脚本。Desktop Mod 依赖已安装的 `crs-balance@crs-tools` 和 Node.js。
+
+### Desktop 使用
+
+在 Claude Desktop 的 **Code → 本地会话**中，用量条会自动显示在输入框上方，每 30 秒刷新一次，也可点击用量条右侧的“刷新”立即重新读取 stats 快照。新会话会自动加载；安装或更新前已打开的会话运行一次 `/reload-plugins`，或重新启动会话。新建页面尚未启动会话时和 Chat 页面不会显示。
+
+需要 Claude Desktop 内置的 Claude Code 2.1.286 或更新版本（在本地 Code 会话运行 `/status` 查看）。原有 CLI 状态栏由一键脚本保留并组合；Desktop Mod 不会运行或覆盖已有状态栏脚本。
+
+插件复用 CLI 配置中的网关 key 和 stats 地址。若网关地址是 `https://www.woodlandfield.top`，自动使用 `https://stats.woodlandfield.top`；其他 Magpie 部署需在 `~/.claude/crs-balance.env` 设置 `CRS_BACKEND=magpie` 和 `MAGPIE_STATS_URL`。只读查询自己的 stats 服务，不请求 Anthropic。
 
 ## 使用
 
@@ -92,6 +105,7 @@ crs-balance --watch      # 循环刷新
 ```bash
 claude plugin marketplace update crs-tools
 claude plugin update crs-balance@crs-tools --scope user
+claude plugin update crs-desktop@crs-tools --scope user
 ```
 
 如果其他插件（如 `claude-hud`）把 `statusLine` 踹掉了，在 Claude Code 中运行：

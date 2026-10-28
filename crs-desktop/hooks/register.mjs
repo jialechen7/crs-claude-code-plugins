@@ -7,8 +7,8 @@ plugin_dir="$(ls -d "$config_dir"/plugins/cache/crs-tools/crs-balance/*/bin/crs-
 [ -n "$plugin_dir" ] || exit 20
 export PATH="$HOME/.local/bin/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 command -v node >/dev/null 2>&1 || exit 21
-export CRS_BAR_CELLS="\${CRS_BAR_CELLS:-8}"
-exec node "$plugin_dir" --statusline
+export CRS_BAR_CELLS="\${CRS_DESKTOP_BAR_CELLS:-7}"
+exec node "$plugin_dir" --statusline "$@"
 `;
 
 let segments = [];
@@ -16,6 +16,7 @@ let running = false;
 let hasReading = false;
 let lastFailed = false;
 let lastSuccessAt = 0;
+let pendingManualRefresh = false;
 
 // crs-balance only emits these SGR colours. Strip all other terminal escapes,
 // so account names and backend errors cannot emit control sequences in the UI.
@@ -42,14 +43,20 @@ export function parseLine(line) {
   return pieces;
 }
 
-async function refresh($) {
-  if (running) return;
+async function refresh($, force = false) {
+  if (running) {
+    if (force) pendingManualRefresh = true;
+    return;
+  }
   running = true;
   try {
     // A surface attaches shortly after session.start; never run for CLI sessions.
     const surfaces = await $.session.surfaces();
     if (!surfaces.includes('desktop')) return;
-    const result = await $.process.run(['/bin/bash', '-c', RUN], { timeoutMs: 15000 });
+    $.ui.invalidate('ui.render');
+    const args = ['/bin/bash', '-c', RUN, 'crs-desktop'];
+    if (force) args.push('--cache-seconds', '-1');
+    const result = await $.process.run(args, { timeoutMs: 15000 });
     const line = result.stdout.split('\n').find(value => value.trim());
     if (result.exitCode !== 0 || !line) throw new Error('balance unavailable');
     // The CLI returns its token and API errors as text with exit code zero.
@@ -71,6 +78,10 @@ async function refresh($) {
   } finally {
     running = false;
     $.ui.invalidate('ui.render');
+    if (pendingManualRefresh) {
+      pendingManualRefresh = false;
+      await refresh($, true);
+    }
   }
 }
 
@@ -89,10 +100,18 @@ export function register(on) {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const prior = await next(e);
     if (e.surface !== 'desktop' || e.props.hasSurvey || (!hasReading && !lastFailed)) return prior;
-    const { Box, Text } = $.ui.resolve(e);
+    const { Box, Text, Button } = $.ui.resolve(e);
     const content = hasReading ? segments : [{ text: '用量暂不可用', dimColor: true }];
-    const row = content.map(({ text, ...style }) => Text({ ...style, children: [text] }));
+    // Retain the original block bars in one compact line, with a refresh
+    // button at the right. Keep reset times together when space is tight.
+    const row = content.map(({ text, ...style }) => Text({ ...style, children: [text.replace(/↻\s+/g, '↻\u00a0')] }));
     if (lastFailed && hasReading) row.push(Text({ dimColor: true, children: [' · 缓存'] }));
-    return Box({ flexDirection: 'column', children: [prior, Box({ flexDirection: 'row', children: row })] });
+    const refreshButton = Button({
+      key: 'crs-refresh', label: running ? '刷新中' : '刷新',
+      onPress: async () => { await refresh($, true); },
+    });
+    return Box({ flexDirection: 'column', children: [prior,
+      Box({ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', children: [Box({flexDirection:'row', children:row}), refreshButton] })
+    ] });
   });
 }

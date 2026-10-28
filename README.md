@@ -60,7 +60,7 @@ claude plugin install crs-desktop@crs-tools --scope user
 
 ### Desktop 使用
 
-在 Claude Desktop 的 **Code → 本地会话**中，用量条会自动显示在输入框上方，每 30 秒刷新一次。新会话会自动加载；安装或更新前已打开的会话运行一次 `/reload-plugins`，或重新启动会话。新建页面尚未启动会话时和 Chat 页面不会显示。
+在 Claude Desktop 的 **Code → 本地会话**中，用量条会自动显示在输入框上方，每 30 秒刷新一次，也可点击用量条右侧的“刷新”立即重新读取 stats 快照。新会话会自动加载；安装或更新前已打开的会话运行一次 `/reload-plugins`，或重新启动会话。新建页面尚未启动会话时和 Chat 页面不会显示。
 
 需要 Claude Desktop 内置的 Claude Code 2.1.286 或更新版本（在本地 Code 会话运行 `/status` 查看）。原有 CLI 状态栏由一键脚本保留并组合；Desktop Mod 不会运行或覆盖已有状态栏脚本。
 

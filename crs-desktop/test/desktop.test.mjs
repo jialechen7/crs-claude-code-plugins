@@ -12,7 +12,7 @@ async function harness() {
     clock: { now: async () => state.now ?? 1000, after: (ms, fn) => timers.push({ ms, fn }), every: (ms, fn) => timers.push({ ms, fn }) },
     session: { surfaces: async () => state.surfaces },
     process: { run: async (argv, options) => { calls.push({argv, options}); if (state.error) throw Error('offline'); return state.result; } },
-    ui: { invalidate: () => {}, resolve: () => ({ Box: props => ({ type: 'Box', ...props }), Text: props => ({ type: 'Text', ...props }) }) },
+    ui: { invalidate: () => {}, resolve: () => ({ Box: props => ({ type: 'Box', ...props }), Text: props => ({ type: 'Text', ...props }), Button: props => ({ type: 'Button', ...props }) }) },
   };
   return { mod, hooks, timers, calls, state, $ };
 }
@@ -86,4 +86,17 @@ test('stale data expires after five minutes if the process repeatedly fails', as
   const out = await h.hooks['ui.render'](h.$, {surface:'desktop',props:{}}, async () => null);
   assert.match(JSON.stringify(out), /用量暂不可用/);
   assert.doesNotMatch(JSON.stringify(out), /20.0%/);
+});
+
+
+test('refresh button requests a fresh stats snapshot rather than the local cache', async () => {
+  const h = await harness();
+  h.state.surfaces = ['desktop'];
+  await h.hooks['turn.complete'](h.$, {}, async () => null);
+  const out = await h.hooks['ui.render'](h.$, {surface:'desktop',props:{}}, async () => null);
+  const button = out.children[1].children[1];
+  assert.equal(button.key, 'crs-refresh');
+  await button.onPress();
+  assert.deepEqual(h.calls.at(-1).argv.slice(-2), ['--cache-seconds', '-1']);
+  assert.equal(h.calls.length, 2);
 });

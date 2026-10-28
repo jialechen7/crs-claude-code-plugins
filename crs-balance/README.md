@@ -32,7 +32,10 @@ curl -fsSL https://raw.githubusercontent.com/jialechen7/crs-claude-code-plugins/
 ```bash
 claude plugin marketplace add https://github.com/jialechen7/crs-claude-code-plugins.git
 claude plugin install crs-balance@crs-tools --scope user
+claude plugin install crs-desktop@crs-tools --scope user
 ```
+
+一键安装会同时安装桌面插件：在 Claude Desktop 的 Code 本地会话中，输入框上方会显示同样的用量。已打开的会话在安装或更新后执行一次 `/reload-plugins`。更多说明见仓库根目录的 README。
 
 已安装用户升级后，如果 statusLine 被其他插件覆盖，在 Claude Code 中运行 `/crs-balance:statusline-repair`。
 

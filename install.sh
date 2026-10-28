@@ -2,7 +2,9 @@
 set -euo pipefail
 
 MARKETPLACE_URL="${CRS_MARKETPLACE_URL:-https://github.com/jialechen7/crs-claude-code-plugins.git}"
-PLUGIN_ID="crs-balance@crs-tools"
+BALANCE_PLUGIN_ID="crs-balance@crs-tools"
+DESKTOP_PLUGIN_ID="crs-desktop@crs-tools"
+LEGACY_DESKTOP_PLUGIN_ID="crs-desktop@crs-desktop-local"
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 ENV_FILE="${CRS_ENV_FILE:-$CONFIG_DIR/crs-balance.env}"
 
@@ -24,18 +26,50 @@ claude plugin marketplace add "$MARKETPLACE_URL" >/dev/null || true
 echo "==> 刷新 CRS marketplace"
 claude plugin marketplace update crs-tools >/dev/null
 
-echo "==> 安装 CRS balance 插件"
-if claude plugin list --json | node -e '
+# Refuse to guess if the plugin inventory cannot be read.
+plugin_list="$(claude plugin list --json)"
+printf '%s' "$plugin_list" | node -e '
+let s = "";
+process.stdin.on("data", d => s += d);
+process.stdin.on("end", () => { if (!Array.isArray(JSON.parse(s))) process.exit(1); });
+'
+
+# Check the user scope independently: a project-only install must not prevent a
+# user-wide install, and each plugin must be detected by its exact marketplace ID.
+has_user_plugin() {
+  printf '%s' "$plugin_list" | node -e '
 let s = "";
 process.stdin.on("data", d => s += d);
 process.stdin.on("end", () => {
   const xs = JSON.parse(s || "[]");
-  process.exit(xs.some(x => x.id === "crs-balance@crs-tools") ? 0 : 1);
+  process.exit(xs.some(x => x.id === process.argv[1] && x.scope === "user" && (process.argv[2] !== "enabled" || x.enabled === true)) ? 0 : 1);
 });
-'; then
-  claude plugin update "$PLUGIN_ID" --scope user >/dev/null
-else
-  claude plugin install "$PLUGIN_ID" --scope user >/dev/null
+' "$1" "${2:-}"
+}
+
+install_or_update() {
+  local plugin_id="$1"
+  if has_user_plugin "$plugin_id"; then
+    claude plugin update "$plugin_id" --scope user >/dev/null
+    if ! has_user_plugin "$plugin_id" enabled; then
+      claude plugin enable "$plugin_id" --scope user >/dev/null
+    fi
+  else
+    claude plugin install "$plugin_id" --scope user >/dev/null
+  fi
+}
+
+echo "==> 安装 CRS balance 插件"
+install_or_update "$BALANCE_PLUGIN_ID"
+
+echo "==> 安装 Claude Desktop 用量插件"
+install_or_update "$DESKTOP_PLUGIN_ID"
+
+# Remove only our previous local preview after the replacement is installed.
+# Otherwise both Mod instances would draw the same balance line in Desktop.
+if has_user_plugin "$LEGACY_DESKTOP_PLUGIN_ID"; then
+  echo "==> 移除旧的 Desktop 本地试用插件，避免重复显示"
+  claude plugin uninstall "$LEGACY_DESKTOP_PLUGIN_ID" --scope user --keep-data >/dev/null
 fi
 
 # 0.4.0 起不再需要 admin 凭据。但保留检测旧 env 文件,提示迁移。
@@ -118,4 +152,4 @@ if [[ "$env_created" == "1" ]]; then
   printf '已创建配置模板: %s\n' "$ENV_FILE"
   printf '通常无需编辑;token 会自动从 ~/.claude/settings.json 读取。\n'
 fi
-printf '重启 Claude Code 后生效。\n'
+printf '新会话会自动加载；已打开的会话可运行 /reload-plugins 后生效。\n'

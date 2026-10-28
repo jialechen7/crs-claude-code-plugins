@@ -28,7 +28,7 @@
       "name": "crs-desktop",
       "source": "./crs-desktop",
       "description": "在 Claude Desktop Code 中展示已有 CRS/Magpie 用量。",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "category": "monitoring",
       "tags": [
         "crs",

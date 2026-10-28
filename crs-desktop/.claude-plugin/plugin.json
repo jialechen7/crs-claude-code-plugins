@@ -1,7 +1,7 @@
 {
   "name": "crs-desktop",
   "displayName": "CRS Balance for Desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "在 Claude Desktop Code 输入框上方展示已有 CRS/Magpie 用量，不修改终端 statusline。",
   "author": {
     "name": "jialechen7",

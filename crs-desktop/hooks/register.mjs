@@ -102,16 +102,21 @@ export function register(on) {
     if (e.surface !== 'desktop' || e.props.hasSurvey || (!hasReading && !lastFailed)) return prior;
     const { Box, Text, Button } = $.ui.resolve(e);
     const content = hasReading ? segments : [{ text: '用量暂不可用', dimColor: true }];
-    // Retain the original block bars in one compact line, with a refresh
-    // button at the right. Keep reset times together when space is tight.
-    const row = content.map(({ text, ...style }) => Text({ ...style, children: [text.replace(/↻\s+/g, '↻\u00a0')] }));
-    if (lastFailed && hasReading) row.push(Text({ dimColor: true, children: [' · 缓存'] }));
+    // Leave room for the refresh button and the cached marker. The account
+    // display is abbreviated here; it does not affect account selection.
+    const row = content.map(({ text, ...style }) => {
+      const account = text.match(/^([^@\s]+)@[^\s]+$/);
+      if (account) text = `${account[1].slice(0, 10)}${account[1].length > 10 ? '…' : ''}@…`;
+      text = text.replace(/↻\s+/g, '↻');
+      return Text({ ...style, wrap: 'truncate-end', children: [text] });
+    });
+    if (lastFailed && hasReading) row.push(Text({ dimColor: true, wrap: 'truncate-end', children: [' 缓存'] }));
     const refreshButton = Button({
       key: 'crs-refresh', label: running ? '刷新中' : '刷新',
       onPress: async () => { await refresh($, true); },
     });
     return Box({ flexDirection: 'column', children: [prior,
-      Box({ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', children: [Box({flexDirection:'row', children:row}), refreshButton] })
+      Box({ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', children: [Box({flexDirection:'row', flexShrink: 1, children:row}), refreshButton] })
     ] });
   });
 }

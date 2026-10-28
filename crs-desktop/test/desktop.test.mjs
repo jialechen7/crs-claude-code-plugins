@@ -100,3 +100,21 @@ test('refresh button requests a fresh stats snapshot rather than the local cache
   assert.deepEqual(h.calls.at(-1).argv.slice(-2), ['--cache-seconds', '-1']);
   assert.equal(h.calls.length, 2);
 });
+
+
+test('compact single-line layout keeps usage and refresh visible in cached state', async () => {
+  const h = await harness();
+  h.state.surfaces = ['desktop'];
+  h.state.result.stdout = '\x1b[36mmagpie\x1b[0m › \x1b[2mlongaccountname@example.org\x1b[0m · 5h ██▓░░░░ 37.0% \x1b[2m↻ 2.9h\x1b[0m · mine 19.0% · 7d █▓░░░░░ 21.0% · mine 7.2%\n';
+  await h.hooks['turn.complete'](h.$, {}, async () => null);
+  h.state.error = true;
+  await h.hooks['turn.complete'](h.$, {}, async () => null);
+  const out = await h.hooks['ui.render'](h.$, {surface:'desktop',props:{}}, async () => null);
+  const row = out.children[1];
+  assert.equal(row.flexDirection, 'row');
+  assert.equal(row.children[1].key, 'crs-refresh');
+  const text = JSON.stringify(row);
+  assert.match(text, /longaccoun…@…/);
+  assert.match(text, /37.0%/); assert.match(text, /21.0%/);
+  assert.match(text, /缓存/); assert.match(text, /↻2.9h/);
+});

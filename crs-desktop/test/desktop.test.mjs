@@ -87,21 +87,3 @@ test('stale data expires after five minutes if the process repeatedly fails', as
   assert.match(JSON.stringify(out), /用量暂不可用/);
   assert.doesNotMatch(JSON.stringify(out), /20.0%/);
 });
-
-
-test('desktop smooths the bar while retaining mine, other and unused segments', async () => {
-  const { mod } = await harness();
-  assert.deepEqual(mod.desktopSegments([
-    { text: '██', color: '#2a9d9a' }, { text: '▓▓' }, { text: '░░░░', dimColor: true },
-  ]), [
-    { text: '━━', color: '#158f8b' }, { text: '━━', color: '#65b7b1' },
-    { text: '────', color: '#c8d2d0' },
-  ]);
-});
-
-
-test('desktop retains warning colors for high account usage', async () => {
-  const { mod } = await harness();
-  assert.equal(mod.desktopSegments([{text:'▓▓',color:'#c65d55'}])[0].color, '#c65d55');
-  assert.equal(mod.desktopSegments([{text:'▓▓',color:'#bd8735'}])[0].color, '#bd8735');
-});

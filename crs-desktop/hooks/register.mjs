@@ -7,7 +7,7 @@ plugin_dir="$(ls -d "$config_dir"/plugins/cache/crs-tools/crs-balance/*/bin/crs-
 [ -n "$plugin_dir" ] || exit 20
 export PATH="$HOME/.local/bin/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 command -v node >/dev/null 2>&1 || exit 21
-export CRS_BAR_CELLS="\${CRS_DESKTOP_BAR_CELLS:-5}"
+export CRS_BAR_CELLS="\${CRS_BAR_CELLS:-8}"
 exec node "$plugin_dir" --statusline
 `;
 
@@ -40,23 +40,6 @@ export function parseLine(line) {
   const tail = line.slice(offset).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x1f\x7f]/g, '');
   if (tail) pieces.push({ ...style, text: tail });
   return pieces;
-}
-
-
-// Desktop uses proportionally spaced text, so the CLI's shaded block glyphs
-// look like a noisy stipple. Render a clean rail while retaining the same
-// count of cells and the distinction between this key and the rest of usage.
-export function desktopSegments(parts) {
-  return parts.map(part => {
-    if (/^[█▓░]+$/.test(part.text)) {
-      const glyph = part.text[0];
-      return {
-        text: glyph === '░' ? '─'.repeat(part.text.length) : '━'.repeat(part.text.length),
-        color: glyph === '█' ? '#158f8b' : glyph === '▓' ? (part.color === '#c65d55' || part.color === '#bd8735' ? part.color : '#65b7b1') : '#c8d2d0',
-      };
-    }
-    return { ...part, text: part.text.replace(/↻\s+/g, '↻\u00a0').replace(/ · /g, '\u00a0 · \u00a0') };
-  });
 }
 
 async function refresh($) {
@@ -107,7 +90,7 @@ export function register(on) {
     const prior = await next(e);
     if (e.surface !== 'desktop' || e.props.hasSurvey || (!hasReading && !lastFailed)) return prior;
     const { Box, Text } = $.ui.resolve(e);
-    const content = hasReading ? desktopSegments(segments) : [{ text: '用量暂不可用', dimColor: true }];
+    const content = hasReading ? segments : [{ text: '用量暂不可用', dimColor: true }];
     const row = content.map(({ text, ...style }) => Text({ ...style, children: [text] }));
     if (lastFailed && hasReading) row.push(Text({ dimColor: true, children: [' · 缓存'] }));
     return Box({ flexDirection: 'column', children: [prior, Box({ flexDirection: 'row', children: row })] });
